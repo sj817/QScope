@@ -62,6 +62,103 @@ Type: files; Name: "{app}\*.old"
 const
   WebViewKey = 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
 
+{ The Browse button opens the Windows folder picker instead of the classic folder tree. }
+const
+  FileOpenDialogClass = '{DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}';
+  ShellItemInterface = '{43826D1E-E718-42EE-BC55-A1E261C37BFE}';
+  FOS_PICKFOLDERS = $20;
+  FOS_FORCEFILESYSTEM = $40;
+  FOS_PATHMUSTEXIST = $800;
+  SIGDN_FILESYSPATH = $80058000;
+
+type
+  IShellItem = interface(IUnknown)
+    '{43826D1E-E718-42EE-BC55-A1E261C37BFE}'
+    procedure BindToHandler;
+    procedure GetParent;
+    function GetDisplayName(Form: DWORD; var Name: NativeInt): HResult;
+  end;
+
+  { Methods in vtable order; unused ones only hold their slot. }
+  IFileDialog = interface(IUnknown)
+    '{42F85136-DB7E-439C-85F1-E4075D135FC8}'
+    function Show(Owner: HWND): HResult;
+    procedure SetFileTypes;
+    procedure SetFileTypeIndex;
+    procedure GetFileTypeIndex;
+    procedure Advise;
+    procedure Unadvise;
+    function SetOptions(Options: DWORD): HResult;
+    function GetOptions(var Options: DWORD): HResult;
+    procedure SetDefaultFolder;
+    function SetFolder(Item: IShellItem): HResult;
+    procedure GetFolder;
+    procedure GetCurrentSelection;
+    procedure SetFileName;
+    procedure GetFileName;
+    function SetTitle(Title: String): HResult;
+    function SetOkButtonLabel(Text: String): HResult;
+    procedure SetFileNameLabel;
+    function GetResult(var Item: IShellItem): HResult;
+  end;
+
+function SHCreateItemFromParsingName(Path: String; Context: NativeInt;
+  var Kind: TGUID; var Item: IShellItem): HResult;
+external 'SHCreateItemFromParsingName@shell32.dll stdcall';
+function lstrlenW(Text: NativeInt): Integer;
+external 'lstrlenW@kernel32.dll stdcall';
+function lstrcpynW(Target: String; Source: NativeInt; Length: Integer): NativeInt;
+external 'lstrcpynW@kernel32.dll stdcall';
+procedure CoTaskMemFree(Memory: NativeInt);
+external 'CoTaskMemFree@ole32.dll stdcall';
+
+function ItemPath(Item: IShellItem; var Path: String): Boolean;
+var Name: NativeInt; Length: Integer;
+begin
+  Result := False;
+  Name := 0;
+  if (Item.GetDisplayName(SIGDN_FILESYSPATH, Name) <> 0) or (Name = 0) then
+    Exit;
+  try
+    Length := lstrlenW(Name);
+    SetLength(Path, Length);
+    lstrcpynW(Path, Name, Length + 1);
+    Result := Length > 0;
+  finally
+    CoTaskMemFree(Name);
+  end;
+end;
+
+{ Returns False when the picker was cancelled; raises when the picker is unavailable. }
+function PickFolder(Owner: HWND; const Title: String; var Directory: String): Boolean;
+var
+  Dialog: IFileDialog;
+  Start, Picked: IShellItem;
+  Kind: TGUID;
+  Options: DWORD;
+  Folder: String;
+begin
+  Result := False;
+  Dialog := IFileDialog(CreateComObject(StringToGuid(FileOpenDialogClass)));
+  Options := 0;
+  Dialog.GetOptions(Options);
+  Dialog.SetOptions(Options or FOS_PICKFOLDERS or FOS_FORCEFILESYSTEM or FOS_PATHMUSTEXIST);
+  Dialog.SetTitle(Title);
+  { Start in the deepest existing folder of the current path. }
+  Folder := RemoveBackslashUnlessRoot(Directory);
+  while (Folder <> '') and not DirExists(Folder) and (ExtractFileDir(Folder) <> Folder) do
+    Folder := ExtractFileDir(Folder);
+  Kind := StringToGuid(ShellItemInterface);
+  if DirExists(Folder) and (SHCreateItemFromParsingName(Folder, 0, Kind, Start) = 0) then
+    Dialog.SetFolder(Start);
+  if Dialog.Show(Owner) <> 0 then
+    Exit;
+  if (Dialog.GetResult(Picked) = 0) and ItemPath(Picked, Folder) then begin
+    Directory := Folder;
+    Result := True;
+  end;
+end;
+
 function RuntimeVersion(Root: Integer): Boolean;
 var Version: String;
 begin
@@ -131,4 +228,27 @@ begin
   if FileExists(ExpandConstant('{app}\qscope-cli.exe')) then
     Result := Exec(ExpandConstant('{app}\qscope-cli.exe'), 'cli uninstall --if-owned',
       ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
+end;
+
+procedure BrowseDirectory(Sender: TObject);
+var Directory: String; Picked: Boolean;
+begin
+  Directory := WizardForm.DirEdit.Text;
+  try
+    Picked := PickFolder(WizardForm.Handle, SetupMessage(msgWizardSelectDir), Directory);
+  except
+    { Without the Windows folder picker, the classic folder tree. }
+    Picked := BrowseForFolder(SetupMessage(msgBrowseDialogLabel), Directory, False);
+  end;
+  if not Picked then
+    Exit;
+  { Like the classic dialog, a picked folder gets its own QScope subfolder. }
+  if CompareText(ExtractFileName(RemoveBackslashUnlessRoot(Directory)), 'QScope') <> 0 then
+    Directory := AddBackslash(Directory) + 'QScope';
+  WizardForm.DirEdit.Text := Directory;
+end;
+
+procedure InitializeWizard;
+begin
+  WizardForm.DirBrowseButton.OnClick := @BrowseDirectory;
 end;
