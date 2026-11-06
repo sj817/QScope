@@ -237,7 +237,10 @@ try {
   );
   await page.screenshot({ path: join(output, "desktop-packet.png") });
   await page.getByRole("button", { name: "打开设置", exact: true }).click();
-  await page.getByText("安装范围与路径", { exact: true }).click();
+  await page.getByRole("tab", { name: /AI 接入/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "安装范围与路径", exact: true }),
+  ).toBeVisible();
   const setup = await api(app, "/settings/qq");
   assert.equal(setup.available, true);
   await page.getByRole("button", { name: "当前项目", exact: true }).click();
@@ -287,6 +290,7 @@ try {
       json: { opened: true, frontend_url: inspectorUrl, frontend: "Synthetic" },
     }),
   );
+  await page.getByRole("tab", { name: /QQ 抓包/ }).click();
   await page
     .getByRole("button", { name: "打开 DevTools", exact: true })
     .click();
