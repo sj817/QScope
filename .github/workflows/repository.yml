@@ -1,0 +1,106 @@
+name: Repository standards
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  layout:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-2025, ubuntu-24.04, macos-15]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Check repository layout and documentation links
+        run: node tools/check-repo.ts
+
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Install pinned lint and type tools
+        run: npx --yes pnpm@9.15.9 install --frozen-lockfile
+      - name: ESLint
+        run: npx --yes pnpm@9.15.9 run lint
+      - name: Prettier
+        run: npx --yes pnpm@9.15.9 run format:check
+      - name: Type-check tools
+        run: npx --yes pnpm@9.15.9 run typecheck
+
+  rust:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Check generated WebUI contract
+        run: cargo run -p qscope-web --locked -- types --check
+
+  # The WebUI ships inside WebView2, so the browser tests run on Windows with Edge.
+  web:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.97.0 --profile minimal
+      - name: Build local API server
+        run: cargo build -p qscope-web -p qscope-cli --locked
+      - name: Install pinned frontend dependencies
+        working-directory: apps/web
+        run: npx --yes pnpm@9.15.9 install --frozen-lockfile
+      - name: Check types and build WebUI
+        working-directory: apps/web
+        run: npx --yes pnpm@9.15.9 run build
+      - name: Install pinned DevTools frontend assets
+        working-directory: collectors/devtools
+        run: |
+          npx --yes pnpm@9.15.9 install --frozen-lockfile --ignore-scripts
+      - name: Test synthetic capture workflows
+        working-directory: apps/web
+        run: npx --yes pnpm@9.15.9 test
+      - name: Keep Playwright traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-results
+          path: apps/web/test-results
+          retention-days: 7
