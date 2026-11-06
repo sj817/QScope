@@ -1,0 +1,40 @@
+# Research inputs, captures, experiments, and generated output are local.
+/.tmp/
+/artifacts/
+/build/
+/dist/
+/coverage/
+**/target/
+**/node_modules/
+**/.sites-runtime/
+**/.playwright-cli/
+**/test-results/
+**/playwright-report/
+/apps/*/dist/
+/apps/desktop/gen/
+/collectors/*/dist/
+/collectors/qqnt-windows/host/bin/
+/collectors/qqnt-windows/host/obj/
+/.cache/
+
+# Local AI tool configuration, records and installed skills stay on this machine.
+/.codex/
+/.claude/
+/.agents/
+/.cursor/
+
+# Local design-hook cache and suppressions from the impeccable plugin.
+/.impeccable/
+
+# Local credentials; examples must contain synthetic values.
+.env
+.env.*
+!.env.example
+
+# OS metadata.
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Do not globally ignore *.bin, *.json, *.log, or *.png:
+# reviewed minimal fixtures and source assets must remain visible to Git.

@@ -1,0 +1,8 @@
+# Prettier also skips everything in .gitignore.
+pnpm-lock.yaml
+apps/web/src/api.generated.ts
+apps/web/public/
+apps/web/vendor/
+tests/fixtures/
+*.md
+**/.impeccable/
