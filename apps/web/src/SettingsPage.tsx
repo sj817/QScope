@@ -120,6 +120,8 @@ export function SettingsPage({
     directory?: string,
     remembered = false,
   ) {
+    // A choice is kept at once, even if the window closes before the check returns.
+    if (!remembered) saveTarget(nextScope, directory || "");
     controller.current?.abort();
     const next = new AbortController();
     controller.current = next;
