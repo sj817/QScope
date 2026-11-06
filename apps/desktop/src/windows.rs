@@ -274,14 +274,36 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| {
-            if window.label() == "main"
-                && matches!(event, tauri::WindowEvent::CloseRequested { .. })
-            {
-                if let Some(state) = window.app_handle().try_state::<Desktop>() {
-                    state.stopped.store(true, Ordering::Release);
-                    let _ = state.connection.action("release");
-                }
-                window.app_handle().exit(0);
+            if window.label() != "main" {
+                return;
+            }
+            let tauri::WindowEvent::CloseRequested { api, .. } = event else {
+                return;
+            };
+            let app = window.app_handle().clone();
+            let Some(state) = app.try_state::<Desktop>() else {
+                app.exit(0);
+                return;
+            };
+            // The window goes at once; the QQ it started is closed before the lease is released.
+            api.prevent_close();
+            let _ = window.hide();
+            if state.stopped.swap(true, Ordering::AcqRel) {
+                return;
+            }
+            let connection = state.connection.clone();
+            let closing = std::thread::Builder::new()
+                .name("qscope-desktop-exit".into())
+                .spawn({
+                    let app = app.clone();
+                    move || {
+                        let _ = connection.close_page_qq();
+                        let _ = connection.action("release");
+                        app.exit(0);
+                    }
+                });
+            if closing.is_err() {
+                app.exit(0);
             }
         })
         .setup(move |app| {

@@ -495,6 +495,7 @@ fn router(state: AppState) -> Router {
             "/api/v1/settings/qq",
             get(onboarding::status).post(onboarding::start),
         )
+        .route("/api/v1/settings/qq/stop", post(onboarding::stop))
         .route("/api/v1/settings/qq/health", get(onboarding::health))
         .route("/api/v1/settings/qq/repair", post(onboarding::repair))
         .route("/api/v1/update", get(update::status))

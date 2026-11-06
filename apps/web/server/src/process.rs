@@ -81,6 +81,21 @@ impl Probe {
         }
     }
 
+    /// A producer QScope has just seen exit, such as a research copy it closed.
+    pub fn exited(&mut self, id: &str, birth: &str) {
+        #[cfg(windows)]
+        self.entries.insert(
+            id.into(),
+            Cached {
+                birth: birth.into(),
+                alive: Some(false),
+                checked: std::time::Instant::now(),
+            },
+        );
+        #[cfg(not(windows))]
+        let _ = (id, birth);
+    }
+
     pub async fn annotate(&mut self, sessions: &mut [Session], imports: &Path) {
         self.annotate_cached(sessions, imports);
         #[cfg(windows)]

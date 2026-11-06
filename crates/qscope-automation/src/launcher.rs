@@ -292,6 +292,63 @@ pub fn launch(
     }
 }
 
+/// Close a running research copy through its owner. The owner ends the capture with its footer,
+/// stops QQ and writes `exit.json`; only the owner whose receipt names the live process is asked.
+pub fn stop(log_directory: &Path, connection_file: &Path, profile: &str) -> Result<Value, Error> {
+    validate_profile(profile, 1024)?;
+    let connection = devtools::Connection::connect_file(connection_file)?;
+    runtime::no_links(log_directory)?;
+    let mut selected = None;
+    for entry in fs::read_dir(log_directory)? {
+        let directory = entry?.path();
+        let receipt = directory.join("manifest.json");
+        runtime::no_links(&receipt)?;
+        if !receipt.is_file() {
+            continue;
+        }
+        let Ok(value) = read_json(&receipt) else {
+            continue;
+        };
+        if value["kind"] == "qscope-research-launcher"
+            && value["profile"] == profile
+            && value["pid"] == connection.info.pid
+            && value["process_birth_filetime"] == connection.info.birth_filetime
+        {
+            if selected.is_some() {
+                return Err(Error::new(
+                    "qq_identity",
+                    "Multiple owner receipts match this profile",
+                ));
+            }
+            selected = Some(directory);
+        }
+    }
+    let owner = selected.ok_or_else(|| {
+        Error::new(
+            "qq_identity",
+            "No QScope owner receipt matches the running research QQ",
+        )
+    })?;
+    fs::write(owner.join("stop"), b"stop")?;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !owner.join("exit.json").is_file() {
+        if Instant::now() >= deadline {
+            return Err(Error::new(
+                "qq_timeout",
+                "The research owner has not finished stopping",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Ok(json!({
+        "schema_version": 1,
+        "profile": profile,
+        "stopped": true,
+        "pid": connection.info.pid,
+        "birth_filetime": connection.info.birth_filetime,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +360,54 @@ mod tests {
         }
         assert!(validate_profile(&"a".repeat(33), 19860).is_err());
         assert!(validate_profile("test_01-a", 65535).is_ok());
+    }
+
+    #[test]
+    fn stop_asks_only_the_owner_of_the_live_research_copy() {
+        use std::{io::Write, net::TcpListener};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let info = json!({"version":1,"pid":4242,"birth_filetime":"134000000000000001","build":"synthetic","endpoint":endpoint}).to_string();
+        let bridge = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut headers = Vec::new();
+            while !headers.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                headers.push(byte[0]);
+            }
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{info}",
+                info.len()
+            )
+            .unwrap();
+        });
+        let root = tempfile::tempdir().unwrap();
+        let connection = root.path().join("devtools.json");
+        fs::write(&connection, json!({"schema_version":1,"pid":4242,"birth_filetime":"134000000000000001","endpoint":endpoint,"ready":true,"token":"a".repeat(64)}).to_string()).unwrap();
+        let launches = root.path().join("launches");
+        let receipt = |name: &str, pid: u32| {
+            let directory = launches.join(name);
+            fs::create_dir_all(&directory).unwrap();
+            fs::write(directory.join("manifest.json"), json!({"kind":"qscope-research-launcher","profile":"automation","pid":pid,"process_birth_filetime":"134000000000000001"}).to_string()).unwrap();
+            directory
+        };
+        let (owner, earlier) = (receipt("launch-live", 4242), receipt("launch-old", 4141));
+        fs::write(launches.join(".launcher.lock"), b"").unwrap();
+        let exit = owner.clone();
+        let simulated = std::thread::spawn(move || {
+            while !exit.join("stop").is_file() {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            fs::write(exit.join("exit.json"), b"{}").unwrap();
+        });
+        let stopped = stop(&launches, &connection, "automation").unwrap();
+        assert_eq!(stopped["pid"], 4242);
+        assert_eq!(stopped["birth_filetime"], "134000000000000001");
+        assert!(!earlier.join("stop").exists());
+        simulated.join().unwrap();
+        bridge.join().unwrap();
     }
 
     #[test]

@@ -17,6 +17,10 @@ pub struct Manager {
     error: Option<String>,
     task: Option<tokio::task::JoinHandle<()>>,
     stopping: bool,
+    // QQ started from a QScope page leaves with the desktop; the CLI and AI keep their own.
+    page_task: bool,
+    page_owned: Option<(u32, String)>,
+    released: bool,
 }
 
 impl Manager {
@@ -136,6 +140,8 @@ pub struct SetupRequest {
     profile: String,
     #[serde(default = "default_port")]
     port: u16,
+    #[serde(skip)]
+    from_page: bool,
 }
 fn default_profile() -> String {
     "automation".into()
@@ -150,6 +156,7 @@ impl Default for SetupRequest {
             installer: None,
             profile: default_profile(),
             port: default_port(),
+            from_page: false,
         }
     }
 }
@@ -159,9 +166,10 @@ pub async fn start(
     headers: axum::http::HeaderMap,
     request: Option<Json<SetupRequest>>,
 ) -> Result<Json<QQSetup>, ApiError> {
-    let request = request.map(|value| value.0).unwrap_or_default();
+    let mut request = request.map(|value| value.0).unwrap_or_default();
     qscope_automation::launcher::validate_profile(&request.profile, request.port)?;
-    if request.installer.is_some() && headers.contains_key("origin") {
+    request.from_page = headers.contains_key("origin");
+    if request.installer.is_some() && request.from_page {
         return Err(ApiError::new(
             "forbidden",
             "本地安装包路径需要通过 CLI 指定",
@@ -215,6 +223,8 @@ fn spawn_prepare(state: &AppState, request: SetupRequest) -> Result<(), ApiError
     manager.busy = true;
     manager.error = None;
     manager.progress = None;
+    manager.page_task = request.from_page;
+    manager.released = false;
     let task_state = state.clone();
     manager.task = Some(tokio::spawn(async move {
         let result = prepare(&task_state, request).await;
@@ -523,7 +533,7 @@ async fn prepare(state: &AppState, request: SetupRequest) -> Result<(), ApiError
             .map_err(Into::into)
     })
     .await?;
-    if request.prepare_only {
+    if request.prepare_only || released(state)? {
         return Ok(());
     }
     let mut record = read_progress(&progress).unwrap_or_else(|| json!({}));
@@ -538,11 +548,36 @@ async fn prepare(state: &AppState, request: SetupRequest) -> Result<(), ApiError
     let Json(launched) = automation::launch(
         State(state.clone()),
         Json(crate::contract::DevtoolsLaunchRequest {
-            profile: request.profile,
+            profile: request.profile.clone(),
             port: request.port,
         }),
     )
     .await?;
+    if request.from_page
+        && let (Some(pid), Some(birth)) = (
+            launched["pid"]
+                .as_u64()
+                .and_then(|pid| u32::try_from(pid).ok()),
+            launched["process_birth_filetime"].as_str(),
+        )
+    {
+        state
+            .onboarding
+            .lock()
+            .map_err(|_| lock_error())?
+            .page_owned = Some((pid, birth.into()));
+    }
+    // The page that asked for this copy closed while it was starting.
+    if released(state)? {
+        let connection = state
+            .runtime
+            .package()
+            .join("portable/profiles")
+            .join(&request.profile)
+            .join(".qscope/devtools.json");
+        close(state, connection, request.profile).await?;
+        return Ok(());
+    }
     record["stage"] = json!("running");
     record["launch"] = launched;
     tokio::fs::write(
@@ -552,4 +587,89 @@ async fn prepare(state: &AppState, request: SetupRequest) -> Result<(), ApiError
     .await
     .map_err(|error| ApiError::new("setup", error.to_string()))?;
     Ok(())
+}
+
+fn released(state: &AppState) -> Result<bool, ApiError> {
+    Ok(state.onboarding.lock().map_err(|_| lock_error())?.released)
+}
+
+// Closes one research copy through its owner and records the exit, so the status shown next
+// does not wait for the producer check to notice.
+async fn close(state: &AppState, connection: PathBuf, profile: String) -> Result<Value, ApiError> {
+    let launches = state.runtime.storage.join("automation/launches");
+    let stopped = blocking(move || {
+        qscope_automation::launcher::stop(&launches, &connection, &profile).map_err(Into::into)
+    })
+    .await?;
+    if let (Some(pid), Some(birth)) = (stopped["pid"].as_u64(), stopped["birth_filetime"].as_str())
+    {
+        let sessions = state
+            .library
+            .lock()
+            .map_err(|_| lock_error())?
+            .snapshot()
+            .sessions;
+        let mut processes = state.processes.lock().await;
+        for session in sessions.iter().filter(|session| {
+            u64::from(session.pid) == pid && session.process_birth_filetime == birth
+        }) {
+            processes.exited(&session.id, birth);
+        }
+    }
+    Ok(stopped)
+}
+
+#[derive(Default, serde::Deserialize)]
+pub struct StopRequest {
+    /// Only a copy started from a QScope page; QQ started by the CLI or an AI keeps running.
+    #[serde(default)]
+    page_only: bool,
+}
+
+/// Closes the research QQ shown in the settings. A startup still in progress is not launched.
+pub async fn stop(
+    State(state): State<AppState>,
+    request: Option<Json<StopRequest>>,
+) -> Result<Json<QQSetup>, ApiError> {
+    let page_only = request.map(|value| value.0).unwrap_or_default().page_only;
+    let owned = {
+        let mut manager = state.onboarding.lock().map_err(|_| lock_error())?;
+        if manager.busy && (!page_only || manager.page_task) {
+            manager.released = true;
+        }
+        manager.page_owned.clone()
+    };
+    let target = blocking({
+        let state = state.clone();
+        move || {
+            let saved = if page_only {
+                let Some((pid, birth)) = owned else {
+                    return Ok(None);
+                };
+                automation::saved_connections(&state)?
+                    .into_iter()
+                    .find(|saved| saved.ready && saved.pid == pid && saved.birth_filetime == birth)
+            } else {
+                automation::current_connection(&state)?
+            };
+            let Some(saved) = saved else {
+                return Ok(None);
+            };
+            let path = PathBuf::from(saved.status_path);
+            // The connection file sits at profiles/<profile>/.qscope/devtools.json.
+            let profile = path
+                .parent()
+                .and_then(Path::parent)
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| ApiError::new("qq_identity", "无法确定研究 QQ 的 profile"))?
+                .to_owned();
+            Ok(Some((path, profile)))
+        }
+    })
+    .await?;
+    if let Some((connection, profile)) = target {
+        close(&state, connection, profile).await?;
+    }
+    blocking(move || snapshot(&state).map(Json)).await
 }

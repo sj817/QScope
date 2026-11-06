@@ -198,6 +198,15 @@ impl Connection {
     pub fn heartbeat(&self) -> Result<(), Error> {
         self.action("heartbeat").map(|_| ())
     }
+    /// Closes the research QQ started from a QScope page. QQ started by the CLI or an AI, and
+    /// recordings of other producers, keep running.
+    pub fn close_page_qq(&self) -> Result<serde_json::Value, Error> {
+        self.client.post_with_timeout(
+            "/api/v1/settings/qq/stop",
+            serde_json::json!({"page_only":true}),
+            Duration::from_secs(20),
+        )
+    }
 }
 
 impl Drop for Connection {
