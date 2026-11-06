@@ -1,0 +1,41 @@
+{
+  "repository": "https://github.com/ikenxuan/karin-plugin-kkk",
+  "commit": "08627f1081567933c82aad2fe5f7b75095687520",
+  "license": "GPL-3.0-only",
+  "adapted_files": ["src/Appearance.tsx", "src/styles.css"],
+  "distributed_license": "public/licenses/karin-plugin-kkk-LICENSE.txt",
+  "author": "ikenxuan",
+  "adaptation": "QScope visual theme adapted from DouyinVideoWork, DefaultLayout and AmbientCover; local workbench layout and interaction code remain in their existing modules.",
+  "sources": [
+    {
+      "path": "packages/core/ktr/template/douyin/video-work/components/VideoWork.tsx",
+      "url": "https://github.com/ikenxuan/karin-plugin-kkk/blob/08627f1081567933c82aad2fe5f7b75095687520/packages/core/ktr/template/douyin/video-work/components/VideoWork.tsx",
+      "blob_sha": "4119da5975e4e0b4cfbbf75ff3dd8f2cd739d212"
+    },
+    {
+      "path": "packages/core/ktr/template/components/DefaultLayout.tsx",
+      "url": "https://github.com/ikenxuan/karin-plugin-kkk/blob/08627f1081567933c82aad2fe5f7b75095687520/packages/core/ktr/template/components/DefaultLayout.tsx",
+      "blob_sha": "4ea203ab9b8322f0830debc8a065f94268192998"
+    },
+    {
+      "path": "packages/core/ktr/template/components/AmbientCover.tsx",
+      "url": "https://github.com/ikenxuan/karin-plugin-kkk/blob/08627f1081567933c82aad2fe5f7b75095687520/packages/core/ktr/template/components/AmbientCover.tsx",
+      "blob_sha": "c847f545f9e744c8cacf4a6a96408ee5bf503dfa"
+    },
+    {
+      "path": "packages/core/ktr/template/style.css",
+      "url": "https://github.com/ikenxuan/karin-plugin-kkk/blob/08627f1081567933c82aad2fe5f7b75095687520/packages/core/ktr/template/style.css",
+      "blob_sha": "5a1b2b4f10fc888a1d8e2604dd50e6d43ce444b7"
+    },
+    {
+      "path": "packages/core/ktr/utils/theme.ts",
+      "url": "https://github.com/ikenxuan/karin-plugin-kkk/blob/08627f1081567933c82aad2fe5f7b75095687520/packages/core/ktr/utils/theme.ts",
+      "blob_sha": "a8bea6f6a350a3ae82b89a9395568dc4833fff94"
+    }
+  ],
+  "font_packages": {
+    "@lobehub/webfont-harmony-sans-sc": "1.0.0",
+    "@fontsource-variable/inter": "5.3.0"
+  }
+}
+
