@@ -67,6 +67,15 @@ const clipboard = (page: Page) =>
   page
     .evaluate(() => navigator.clipboard.readText())
     .then((text) => text.replace(/\r\n/g, "\n"));
+// Until the copy lands the clipboard holds older text; that is retried, not thrown.
+const clipboardJson = (page: Page) =>
+  clipboard(page).then((text) => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return undefined;
+    }
+  });
 
 test("history, exact sequence search, direction filter and both directions of field/hex selection", async ({
   page,
@@ -806,14 +815,10 @@ test("JSON layout, Inter, solid buttons and full Unicode value copying never use
     fullPage: true,
   });
   await page.keyboard.press("Escape");
+  await page.evaluate(() => navigator.clipboard.writeText(""));
   await copy.click();
   await expect
-    .poll(
-      async () =>
-        JSON.parse(await page.evaluate(() => navigator.clipboard.readText()))[
-          "1"
-        ],
-    )
+    .poll(async () => (await clipboardJson(page))?.["1"])
     .toBe(longText);
   await page.screenshot({
     path: resolve(root, "json-detail.png"),
@@ -940,9 +945,7 @@ test("JSON copying groups repeats without dropping fields and preserves all 64-b
     .getByRole("button", { name: "复制 JSON 结构", exact: true })
     .click();
   await expect
-    .poll(async () =>
-      JSON.parse(await page.evaluate(() => navigator.clipboard.readText())),
-    )
+    .poll(() => clipboardJson(page))
     .toEqual({ "1": ["1", "2"], "2": "18446744073709551615" });
 });
 
