@@ -172,12 +172,15 @@ begin
     RuntimeVersion(HKLM32) or RuntimeVersion(HKLM64);
 end;
 
-function StopBackend(const Directory: String): Boolean;
-var Code: Integer;
+function StopBackend(const Directory: String; CloseTasks: Boolean): Boolean;
+var Code: Integer; Arguments: String;
 begin
   Result := True;
+  Arguments := 'service stop';
+  if CloseTasks then
+    Arguments := Arguments + ' --close-tasks';
   if FileExists(Directory + '\qscope-cli.exe') then
-    Result := Exec(Directory + '\qscope-cli.exe', 'service stop', Directory,
+    Result := Exec(Directory + '\qscope-cli.exe', Arguments, Directory,
       SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
 end;
 
@@ -185,9 +188,17 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var Code: Integer;
 begin
   Result := '';
-  if not StopBackend(ExpandConstant('{app}')) then begin
+  if not StopBackend(ExpandConstant('{app}'), False) then begin
     Result := 'QScope 仍有活动研究任务。请先停止研究 QQ 和录制，然后重试。';
-    Exit;
+    { An online update has closed its tasks already; a setup run by hand asks first. }
+    if WizardSilent then
+      Exit;
+    if MsgBox('QScope 仍有研究 QQ 或录制在运行。关闭它们并继续安装吗？' + #13#10 +
+      '录制会先保存，抓包会写入结束标记。', mbConfirmation, MB_YESNO) <> IDYES then
+      Exit;
+    if not StopBackend(ExpandConstant('{app}'), True) then
+      Exit;
+    Result := '';
   end;
   if not HasWebView then begin
     ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');
@@ -220,7 +231,7 @@ end;
 function InitializeUninstall: Boolean;
 var Code: Integer;
 begin
-  Result := StopBackend(ExpandConstant('{app}'));
+  Result := StopBackend(ExpandConstant('{app}'), False);
   if not Result then begin
     MsgBox('QScope 仍有活动研究任务。请先停止研究 QQ 和录制。', mbError, MB_OK);
     Exit;

@@ -1,16 +1,18 @@
 // Online updates through the backend, so the desktop and the browser share one download and
-// one state. The backend refuses to replace itself while QQ or a recording is active.
+// one state. Recordings and research QQ are closed only after the new package is verified.
 use crate::{
     ApiError, AppState, blocking,
     contract::{UpdateSettingsRequest, UpdateStatus},
-    control, lock_error,
+    control, lock_error, onboarding,
 };
 use axum::{Json, extract::State};
 use qscope_automation::update;
 use serde::Deserialize;
+use serde_json::{Value, json};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 #[derive(Default)]
@@ -158,20 +160,84 @@ pub async fn settings(
     .await
 }
 
-async fn idle(state: &AppState) -> Result<(), ApiError> {
+fn preparing(state: &AppState) -> Result<(), ApiError> {
+    if state.onboarding.lock().map_err(|_| lock_error())?.busy() {
+        return Err(ApiError::new(
+            "setup_busy",
+            "QQ 正在下载或启动，请等它完成后再更新",
+        ));
+    }
+    Ok(())
+}
+
+/// Ends what keeps the old build in use before it is replaced: recordings are saved and each
+/// running research QQ is closed through its owner, so its capture ends with a footer.
+pub(crate) async fn close_tasks(state: &AppState) -> Result<Value, ApiError> {
+    preparing(state)?;
+    let recordings = {
+        let manager = state.recordings.lock().map_err(|_| lock_error())?;
+        let active = manager
+            .list()
+            .iter()
+            .filter(|recording| recording.state == "recording")
+            .count();
+        manager.stop_all();
+        active
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while state
+        .recordings
+        .lock()
+        .map_err(|_| lock_error())?
+        .list()
+        .iter()
+        .any(|recording| recording.state == "recording")
+    {
+        if Instant::now() >= deadline {
+            return Err(ApiError::new(
+                "recording_timeout",
+                "录制没有在 10 秒内保存完成",
+            ));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // Only copies whose bridge still answers are running; a stale connection file is left alone.
+    let running = blocking({
+        let state = state.clone();
+        move || {
+            Ok(crate::automation::saved_connections(&state)?
+                .into_iter()
+                .filter(|saved| {
+                    saved.ready
+                        && qscope_automation::devtools::Connection::connect_file(Path::new(
+                            &saved.status_path,
+                        ))
+                        .is_ok()
+                })
+                .map(|saved| PathBuf::from(saved.status_path))
+                .collect::<Vec<_>>())
+        }
+    })
+    .await?;
+    let mut closed = Vec::new();
+    for connection in running {
+        let profile = onboarding::profile_of(&connection)?;
+        closed.push(onboarding::close(state, connection, profile).await?);
+    }
     if control::active_tasks(state.clone()).await? {
         return Err(ApiError::new(
             "active_tasks",
             "研究 QQ 或录制仍在运行，请先结束对应任务再更新",
         ));
     }
-    Ok(())
+    Ok(json!({"schema_version":1,"recordings":recordings,"qq":closed}))
 }
 
-/// Downloads the new release and starts installing it. A setup package takes over from there;
-/// a portable or CLI package waits for `restart`.
+/// Downloads and verifies the new release while QQ keeps running, then closes the running
+/// tasks and starts installing it. A setup package takes over from there; a portable package
+/// waits for `restart`.
 pub async fn install(State(state): State<AppState>) -> Result<Json<UpdateStatus>, ApiError> {
-    idle(&state).await?;
+    preparing(&state)?;
     let (install, directory) = update::locate()?;
     if let Some(reason) = unsupported(install) {
         return Err(ApiError::new("update_unsupported", reason));
@@ -198,37 +264,8 @@ pub async fn install(State(state): State<AppState>) -> Result<Json<UpdateStatus>
         manifest
     };
     let task = state.clone();
-    tokio::task::spawn_blocking(move || {
-        let data = task.runtime.storage.clone();
-        let progress = task.update.clone();
-        let result: Result<(&str, PathBuf), qscope_automation::Error> = (|| {
-            let proxy = update::load(&data)?.proxy;
-            let package = update::download(
-                &manifest,
-                install,
-                &data,
-                proxy.as_deref(),
-                &mut |received| set(&progress, |manager| manager.downloaded = received),
-                &task.stopping,
-            )?;
-            match install {
-                update::Install::Installer => {
-                    update::start_installer(&package)?;
-                    Ok(("installing", package))
-                }
-                update::Install::Cli => {
-                    // The CLI copy runs this backend; the next start uses the new files.
-                    let files = update::unpack(&package, install)?;
-                    update::replace(&directory, &files)?;
-                    update::refresh_global_command(&directory);
-                    Ok(("ready", package))
-                }
-                _ => {
-                    update::unpack(&package, install)?;
-                    Ok(("ready", package))
-                }
-            }
-        })();
+    tokio::spawn(async move {
+        let result = apply(&task, manifest, install, directory).await;
         set(&task.update, |manager| {
             manager.busy = false;
             match result {
@@ -246,9 +283,58 @@ pub async fn install(State(state): State<AppState>) -> Result<Json<UpdateStatus>
     blocking(move || snapshot(&state).map(Json)).await
 }
 
+async fn apply(
+    state: &AppState,
+    manifest: update::Manifest,
+    install: update::Install,
+    directory: PathBuf,
+) -> Result<(&'static str, PathBuf), ApiError> {
+    let package = blocking({
+        let state = state.clone();
+        move || {
+            let data = state.runtime.storage.clone();
+            let proxy = update::load(&data)?.proxy;
+            Ok(update::download(
+                &manifest,
+                install,
+                &data,
+                proxy.as_deref(),
+                &mut |received| set(&state.update, |manager| manager.downloaded = received),
+                &state.stopping,
+            )?)
+        }
+    })
+    .await?;
+    // A portable copy is replaced on restart, which closes its tasks then.
+    if install != update::Install::Portable {
+        set(&state.update, |manager| manager.stage = "closing".into());
+        close_tasks(state).await?;
+    }
+    blocking(move || {
+        Ok(match install {
+            update::Install::Installer => {
+                update::start_installer(&package)?;
+                ("installing", package)
+            }
+            update::Install::Cli => {
+                // The CLI copy runs this backend; the next start uses the new files.
+                let files = update::unpack(&package, install)?;
+                update::replace(&directory, &files)?;
+                update::refresh_global_command(&directory);
+                ("ready", package)
+            }
+            _ => {
+                update::unpack(&package, install)?;
+                ("ready", package)
+            }
+        })
+    })
+    .await
+}
+
 /// Replaces a portable copy, then stops this backend; the desktop closes and the new one opens.
 pub async fn restart(State(state): State<AppState>) -> Result<Json<UpdateStatus>, ApiError> {
-    idle(&state).await?;
+    close_tasks(&state).await?;
     let (install, directory) = update::locate()?;
     let (package, version) = {
         let manager = state.update.lock().map_err(|_| lock_error())?;

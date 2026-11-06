@@ -106,6 +106,10 @@ pub async fn command(
     {
         return Err(ApiError::new("query", "Invalid backend client identity"));
     }
+    // Updates and the installer end recordings and research QQ before replacing the program.
+    if request.action == "close_tasks" {
+        return crate::update::close_tasks(&state).await.map(Json);
+    }
     if request.action == "stop" && active_tasks(state.clone()).await? {
         return Err(ApiError::new(
             "active_tasks",

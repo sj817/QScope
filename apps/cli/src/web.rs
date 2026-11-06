@@ -74,17 +74,22 @@ enum ServiceCommand {
     /// Report whether the backend runs, its endpoint and its active clients.
     Status,
     /// Stop an idle backend. Active QQ and recordings must be stopped first.
-    Stop,
+    Stop {
+        /// Save running recordings and close every research QQ first, as an update does.
+        #[arg(long)]
+        close_tasks: bool,
+    },
 }
 
 pub fn manage(args: Service) -> Result<(), Error> {
     let data = runtime::user_data()?;
+    let close_tasks = matches!(args.command, ServiceCommand::Stop { close_tasks: true });
     let (descriptor, action) = match args.command {
         ServiceCommand::Start(options) => (options.ensure()?, "pin"),
-        ServiceCommand::Status | ServiceCommand::Stop => match service::connect(&data) {
+        ServiceCommand::Status | ServiceCommand::Stop { .. } => match service::connect(&data) {
             Ok(value) => (
                 value,
-                if matches!(args.command, ServiceCommand::Stop) {
+                if matches!(args.command, ServiceCommand::Stop { .. }) {
                     "stop"
                 } else {
                     "status"
@@ -99,6 +104,11 @@ pub fn manage(args: Service) -> Result<(), Error> {
         },
     };
     let connection = service::Connection::acquire(&data, descriptor)?;
+    let closed = if close_tasks {
+        Some(connection.close_tasks()?)
+    } else {
+        None
+    };
     let status = connection.action(action)?;
     if action == "stop" {
         let deadline = std::time::Instant::now() + Duration::from_secs(15);
@@ -115,7 +125,7 @@ pub fn manage(args: Service) -> Result<(), Error> {
         }
     }
     crate::print_json(
-        &serde_json::json!({"schema_version":1,"running":action!="stop","pid":connection.service.pid,"endpoint":connection.service.endpoint,"status":status}),
+        &serde_json::json!({"schema_version":1,"running":action!="stop","pid":connection.service.pid,"endpoint":connection.service.endpoint,"status":status,"closed":closed}),
     )
 }
 

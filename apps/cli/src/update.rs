@@ -17,6 +17,9 @@ pub struct Options {
     /// Install without asking for confirmation.
     #[arg(long, short)]
     yes: bool,
+    /// Let the update save running recordings and close research QQ first.
+    #[arg(long)]
+    close_tasks: bool,
     /// HTTP proxy for this run only, such as http://127.0.0.1:7890.
     #[arg(long, conflicts_with = "no_proxy")]
     proxy: Option<String>,
@@ -46,22 +49,70 @@ enum UpdateCommand {
     },
 }
 
-fn confirm(version: &str) -> Result<bool, Error> {
+fn confirm(version: &str, tasks: Option<&str>) -> Result<bool, Error> {
     if !std::io::stdin().is_terminal() {
         return Err(Error::new(
             "update_confirm",
             "非交互运行时请加 --yes 确认安装",
         ));
     }
-    eprint!("安装 QScope {version}？[y/N] ");
+    match tasks {
+        Some(tasks) => eprint!("安装 QScope {version}？会先关闭{tasks}。[y/N] "),
+        None => eprint!("安装 QScope {version}？[y/N] "),
+    }
     std::io::stderr().flush()?;
     let mut answer = String::new();
     std::io::stdin().read_line(&mut answer)?;
     Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
 }
 
+// Research QQ and recordings the update would close, as text for the confirmation.
+fn running_tasks(data: &Path) -> Result<Option<String>, Error> {
+    if service::connect(data).is_err() {
+        return Ok(None);
+    }
+    let client = qscope_automation::client::Client::new(&format!(
+        "@{}",
+        display_path(&data.join("service.json"))
+    ))?;
+    let mut tasks = Vec::new();
+    match client.get("/api/v1/settings/qq", &[]) {
+        Ok(qq) if qq["stage"] == "running" => tasks.push(match qq["pid"].as_u64() {
+            Some(pid) => format!("研究 QQ（PID {pid}）"),
+            None => "研究 QQ".into(),
+        }),
+        Ok(_) => {}
+        // More than one research QQ cannot be shown as the current one.
+        Err(_) => tasks.push("研究 QQ".into()),
+    }
+    let recordings = client.get("/api/v1/recordings", &[])?;
+    let recording = recordings.as_array().map_or(0, |list| {
+        list.iter()
+            .filter(|item| item["state"] == "recording")
+            .count()
+    });
+    if recording > 0 {
+        tasks.push(format!("{recording} 段录制"));
+    }
+    // Latin letters and digits keep a space from the Chinese conjunction.
+    let mut text = String::new();
+    for task in tasks {
+        if !text.is_empty() {
+            if text.ends_with(|c: char| c.is_ascii_alphanumeric()) {
+                text.push(' ');
+            }
+            text.push('和');
+            if task.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+                text.push(' ');
+            }
+        }
+        text.push_str(&task);
+    }
+    Ok((!text.is_empty()).then_some(text))
+}
+
 // A portable or CLI copy is replaced in place, which needs the old backend gone first so the
-// next start runs the new build. Active QQ or recordings refuse the stop.
+// next start runs the new build. Tasks started after the confirmation still refuse the stop.
 fn stop_backend(data: &Path) -> Result<bool, Error> {
     let Ok(service) = service::connect(data) else {
         return Ok(false);
@@ -134,7 +185,17 @@ pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
         return print_json(&report);
     }
     update::asset(&manifest, install)?;
-    if !options.yes && !confirm(&manifest.version)? {
+    let tasks = running_tasks(&data)?;
+    if let Some(tasks) = &tasks
+        && options.yes
+        && !options.close_tasks
+    {
+        return Err(Error::new(
+            "active_tasks",
+            format!("{tasks}仍在运行；加 --close-tasks 让更新先关闭它们"),
+        ));
+    }
+    if !options.yes && !confirm(&manifest.version, tasks.as_deref())? {
         return print_json(&json!({"schema_version":1,"installed":false,"cancelled":true}));
     }
     let mut last = Instant::now();
@@ -152,6 +213,11 @@ pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
         },
         &AtomicBool::new(false),
     )?;
+    // Only a verified package closes them, so a failed download leaves QQ running.
+    if tasks.is_some() {
+        let descriptor = service::connect(&data)?;
+        service::Connection::acquire(&data, descriptor)?.close_tasks()?;
+    }
     let result = match install {
         update::Install::Installer => {
             update::start_installer(&package)?;

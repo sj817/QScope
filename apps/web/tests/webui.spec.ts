@@ -2167,6 +2167,106 @@ test("field tree menu explains disabled items, skips them by keyboard and flips 
   );
 });
 
+test("closing tasks for an update saves running recordings through the local control entry", async ({
+  request,
+}) => {
+  const headers = { "X-QScope-Client": "web-v1" };
+  const id = await sessionId(request, "live.qscap");
+  const started = await (
+    await request.post("/api/v1/recordings", {
+      headers,
+      data: { session_id: id },
+    })
+  ).json();
+  expect(started.state).toBe("recording");
+  const closed = await request.post("/api/v1/service/control", {
+    headers,
+    data: { action: "close_tasks", client_id: "0".repeat(48) },
+  });
+  expect(closed.ok()).toBeTruthy();
+  expect(await closed.json()).toMatchObject({ recordings: 1, qq: [] });
+  const jobs = await (
+    await request.get("/api/v1/recordings", { headers })
+  ).json();
+  expect(jobs.find((job: { id: string }) => job.id === started.id).state).toBe(
+    "stopped",
+  );
+});
+
+test("an update names the research QQ and recordings it closes after the package is verified", async ({
+  page,
+}) => {
+  let stage = "available";
+  const status = () => ({
+    current: "0.1.1",
+    install: "installer",
+    unsupported: null,
+    stage,
+    latest: "0.1.2",
+    notes_url: "https://github.com/sj817/QScope/releases/tag/v0.1.2",
+    downloaded: "0",
+    total: "0",
+    error: null,
+    checked_unix: null,
+    check_on_launch: true,
+    proxy: null,
+  });
+  for (const path of ["**/api/v1/update", "**/api/v1/update/check"])
+    await page.route(path, (route) => route.fulfill({ json: status() }));
+  let installs = 0;
+  await page.route("**/api/v1/update/install", (route) => {
+    installs++;
+    stage = "closing";
+    return route.fulfill({ json: status() });
+  });
+  await page.route("**/api/v1/settings/qq", (route) =>
+    route.fulfill({
+      json: {
+        build: "9.9.37-54395",
+        stage: "running",
+        installed: true,
+        available: true,
+        message: "QQ 已运行，流量正在记录",
+        downloaded: "0",
+        total: "334442672",
+        pid: 6789,
+        session_id: null,
+        error: null,
+      },
+    }),
+  );
+  await page.route("**/api/v1/recordings", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "0123456789abcdef01234567",
+          source_session: "fedcba9876543210fedcba98",
+          state: "recording",
+          path: "synthetic.qscap",
+          started_filetime: "134000000000000000",
+          packets: "3",
+          bytes: "512",
+          source_first_event: null,
+          source_last_event: null,
+          error: null,
+        },
+      ],
+    }),
+  );
+  await page.goto("/?page=settings&section=update");
+  const settings = page.getByRole("dialog", { name: "QScope 设置" });
+  await expect(settings).toContainText(
+    "更新前会关闭研究 QQ（PID 6789）和 1 段录制",
+  );
+  await settings
+    .getByRole("button", { name: "关闭 QQ 并更新到 0.1.2", exact: true })
+    .click();
+  await expect(settings).toContainText(
+    "安装包已校验，正在保存录制并关闭研究 QQ",
+  );
+  expect(installs).toBe(1);
+});
+
 test("settings check the runtime with a fix for each part and keep update proxies to plain http", async ({
   page,
 }) => {

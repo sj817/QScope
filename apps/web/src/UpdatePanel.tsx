@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { UpdateStatus } from "./api.generated";
+import type { QQSetup, Recording, UpdateStatus } from "./api.generated";
 import { message, request, size } from "./api";
 import { Icon } from "./views";
 
@@ -15,7 +15,49 @@ const installLabels: Record<string, string> = {
   development: "开发构建",
 };
 // Stages that change on their own; the panel polls while one is showing.
-const moving = new Set(["checking", "downloading"]);
+const moving = new Set(["checking", "downloading", "closing"]);
+
+type Tasks = { qq: boolean; text: string };
+// What installing would close, read while an install or restart is on offer.
+function useRunningTasks(watch: boolean): Tasks | null {
+  const [tasks, setTasks] = useState<Tasks | null>(null);
+  useEffect(() => {
+    if (!watch) return;
+    let stopped = false;
+    async function read() {
+      const parts: string[] = [];
+      let qq = false;
+      const setup = await request<QQSetup>("/settings/qq").catch(() => null);
+      if (setup?.stage === "running") {
+        qq = true;
+        parts.push(setup.pid ? `研究 QQ（PID ${setup.pid}）` : "研究 QQ");
+      }
+      const recordings = await request<Recording[]>("/recordings").catch(
+        () => [],
+      );
+      const recording = recordings.filter(
+        (item) => item.state === "recording",
+      ).length;
+      if (recording) parts.push(`${recording} 段录制`);
+      // Latin letters and digits keep a space from the Chinese conjunction.
+      const text = parts.reduce(
+        (all, part) =>
+          all
+            ? `${all}${/[A-Za-z0-9]$/.test(all) ? " " : ""}和${/^[A-Za-z0-9]/.test(part) ? " " : ""}${part}`
+            : part,
+        "",
+      );
+      if (!stopped) setTasks(text ? { qq, text } : null);
+    }
+    void read();
+    const timer = setInterval(read, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [watch]);
+  return watch ? tasks : null;
+}
 
 function stageText(update: UpdateStatus): string {
   switch (update.stage) {
@@ -27,6 +69,8 @@ function stageText(update: UpdateStatus): string {
       return "已是最新版本";
     case "downloading":
       return `正在下载 ${update.latest} 并校验签名`;
+    case "closing":
+      return "安装包已校验，正在保存录制并关闭研究 QQ…";
     case "installing":
       return "安装程序已启动，QScope 会关闭并在安装后重新打开";
     case "ready":
@@ -100,6 +144,12 @@ export function UpdatePanel({
       setSaving(false);
     }
   }
+  const offered =
+    update?.stage === "available" ||
+    (update?.stage === "error" && Boolean(update.latest)) ||
+    (update?.stage === "ready" && update.install === "portable");
+  const tasks = useRunningTasks(offered);
+  const closing = tasks ? (tasks.qq ? "关闭 QQ 并" : "保存录制并") : "";
   const downloaded = Number(update?.downloaded || "0");
   const total = Number(update?.total || "0");
   const locked =
@@ -116,8 +166,8 @@ export function UpdatePanel({
         <div>
           <h3 id="update-settings-title">更新</h3>
           <p>
-            从 GitHub Releases 获取新版本，校验发布签名和 SHA256 后安装。研究 QQ
-            或录制运行时不会替换程序。
+            从 GitHub Releases 获取新版本，校验发布签名和 SHA256
+            后安装。安装包校验通过后，才会保存录制并关闭研究 QQ。
           </p>
         </div>
         {update?.stage === "available" && (
@@ -158,7 +208,9 @@ export function UpdatePanel({
               disabled={locked}
               onClick={() => void act("/update/install")}
             >
-              下载并安装 {update.latest}
+              {closing
+                ? `${closing}更新到 ${update.latest}`
+                : `下载并安装 ${update.latest}`}
             </button>
           ) : update?.stage === "ready" && update.install === "portable" ? (
             <button
@@ -166,7 +218,7 @@ export function UpdatePanel({
               disabled={locked}
               onClick={() => void act("/update/restart")}
             >
-              重启完成更新
+              {closing ? `${closing}重启更新` : "重启完成更新"}
             </button>
           ) : (
             <button
@@ -199,6 +251,12 @@ export function UpdatePanel({
           </div>
         )}
       </div>
+      {tasks && (
+        <p className="settings-hint">
+          更新前会关闭{tasks.text}：录制先保存，抓包写入结束标记。更新后在「QQ
+          抓包」里重新启动 QQ。
+        </p>
+      )}
       {update?.unsupported && (
         <p className="settings-hint">{update.unsupported}</p>
       )}

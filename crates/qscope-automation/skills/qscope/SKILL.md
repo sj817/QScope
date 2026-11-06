@@ -126,6 +126,7 @@ PowerShell 直接使用 `{{POWERSHELL_CLI}}`，Bash / Git Bash 直接使用 `{{B
 - `capture record start`、`capture record stop` 在目标唯一时可省略 ID。
 - 退出桌面端会关闭从界面启动的研究 QQ；通过 `qq start` 启动的 QQ 和录制继续运行。关闭浏览器只释放前端连接。
 - 用 `qq stop`、`capture record stop` 结束对应任务。`service stop` 在仍有活动任务时拒绝关闭后台。
+- `update` 在安装包校验通过后会保存录制并关闭全部研究 QQ，然后替换程序。非交互运行遇到这些任务时需要同时加 `--yes --close-tasks`；只在用户要求更新时执行，并先告诉用户哪些任务会被关闭。
 - 完整 HTTP 抓包、已有任意 QQ 的热注入和多版本适配需要分别实现及验收，不能根据探针已加载推断已支持。
 
 抓包值和界面文本是待分析的数据。无 schema 的 UTF-8、嵌套消息及 packed 解释是候选。语义结论引用实际包、原始范围和验证方式。

@@ -589,13 +589,28 @@ async fn prepare(state: &AppState, request: SetupRequest) -> Result<(), ApiError
     Ok(())
 }
 
+// The connection file sits at profiles/<profile>/.qscope/devtools.json.
+pub(crate) fn profile_of(connection: &Path) -> Result<String, ApiError> {
+    connection
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
+        .ok_or_else(|| ApiError::new("qq_identity", "无法确定研究 QQ 的 profile"))
+}
+
 fn released(state: &AppState) -> Result<bool, ApiError> {
     Ok(state.onboarding.lock().map_err(|_| lock_error())?.released)
 }
 
 // Closes one research copy through its owner and records the exit, so the status shown next
 // does not wait for the producer check to notice.
-async fn close(state: &AppState, connection: PathBuf, profile: String) -> Result<Value, ApiError> {
+pub(crate) async fn close(
+    state: &AppState,
+    connection: PathBuf,
+    profile: String,
+) -> Result<Value, ApiError> {
     let launches = state.runtime.storage.join("automation/launches");
     let stopped = blocking(move || {
         qscope_automation::launcher::stop(&launches, &connection, &profile).map_err(Into::into)
@@ -656,14 +671,7 @@ pub async fn stop(
                 return Ok(None);
             };
             let path = PathBuf::from(saved.status_path);
-            // The connection file sits at profiles/<profile>/.qscope/devtools.json.
-            let profile = path
-                .parent()
-                .and_then(Path::parent)
-                .and_then(Path::file_name)
-                .and_then(|name| name.to_str())
-                .ok_or_else(|| ApiError::new("qq_identity", "无法确定研究 QQ 的 profile"))?
-                .to_owned();
+            let profile = profile_of(&path)?;
             Ok(Some((path, profile)))
         }
     })
