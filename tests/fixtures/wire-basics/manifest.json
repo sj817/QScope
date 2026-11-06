@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "source": {
+    "reference": "https://protobuf.dev/programming-guides/encoding/",
+    "description": "Hand-encoded protobuf wire fields: varint, UTF-8 candidate, fixed32/fixed64 bits, group, repeated field number",
+    "kind": "synthetic"
+  },
+  "client_scope": "Platform-independent wire format, no QQ/account source",
+  "expected": {
+    "complete": true,
+    "byte_length": 27,
+    "field_numbers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      1
+    ]
+  },
+  "files": [
+    {
+      "path": "input.hex",
+      "sha256": "8b6f94c5ff3f669e7f57e4a3d2e2675763ba29c488b2d70c6e6ccced54955cec"
+    }
+  ]
+}
