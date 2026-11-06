@@ -1794,6 +1794,11 @@ test("checked rows get a batch menu, shift-click selects a range and control eve
   await page
     .getByRole("searchbox", { name: "搜索命令或序号" })
     .fill("controller_stopped");
+  // The list follows the search box after a short pause and a filter change closes an open
+  // menu, so the menu is opened only once the list shows the search result.
+  await expect(
+    list.getByRole("option").filter({ hasNotText: "controller_stopped" }),
+  ).toHaveCount(0);
   await list
     .getByRole("option", { name: "选择包 1201: controller_stopped" })
     .click({ button: "right" });
