@@ -19,8 +19,11 @@ pub struct Options {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Register qs for this installation in the global command directory.
     Install,
+    /// Show where qs points and whether this installation owns it.
     Status,
+    /// Remove the global qs command.
     Uninstall {
         /// Remove qs only when it was registered by this installation.
         #[arg(long)]

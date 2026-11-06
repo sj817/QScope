@@ -13,6 +13,7 @@ use std::{
 
 #[derive(Args)]
 pub struct Live {
+    /// Backend selector: auto, @path/to/service.json or a loopback URL.
     #[arg(long, default_value = DEFAULT_SERVER, global = true)]
     server: String,
     #[command(subcommand)]
@@ -25,25 +26,33 @@ enum LiveCommand {
     Sessions,
     /// Query a bounded metadata page using the workbench filters.
     Events {
+        /// Capture session ID from `capture sessions`.
         session: String,
         #[command(flatten)]
         filters: EventFilters,
     },
     /// Decode one packet through the existing Rust workbench.
     Packet {
+        /// Capture session ID from `capture sessions`.
         session: String,
+        /// Event ID inside that session (not the protocol sequence).
         event: u64,
+        /// pb, tlv16be, jce or hex.
         #[arg(long, default_value = "pb")]
         format: String,
+        /// Start of the decoded region inside the payload.
         #[arg(long, default_value_t = 0)]
         offset: usize,
+        /// Bytes to decode from --offset; the rest of the payload by default.
         #[arg(long)]
         length: Option<usize>,
     },
     /// Compare 2–8 session:event references.
     Compare {
+        /// SESSION:EVENT, repeated 2–8 times.
         #[arg(long, required = true)]
         packet: Vec<String>,
+        /// pb, tlv16be, jce or hex.
         #[arg(long, default_value = "pb")]
         format: String,
     },
@@ -54,16 +63,21 @@ enum LiveCommand {
     },
     /// Wait for matching packets after an explicit event cursor.
     Wait {
+        /// Capture session ID from `capture sessions`.
         session: String,
+        /// Only packets after this event ID; pass the newest ID seen before the action.
         #[arg(long)]
         after: u64,
+        /// Command rules to wait for, separated by commas.
         #[arg(long)]
         command: Option<String>,
         /// Command rules to leave out, separated by commas.
         #[arg(long)]
         exclude: Option<String>,
+        /// all, inbound or outbound.
         #[arg(long, default_value = "all")]
         direction: String,
+        /// Seconds to wait, 1–60.
         #[arg(long, default_value_t = 15, value_parser = clap::value_parser!(u64).range(1..=60))]
         timeout: u64,
         #[command(flatten)]
@@ -71,10 +85,12 @@ enum LiveCommand {
     },
     /// Summarize the commands seen in a quiet window, such as heartbeats and polling.
     Noise {
+        /// Capture session ID from `capture sessions`.
         session: String,
         /// Last event of the window; the newest event by default.
         #[arg(long)]
         before: Option<u64>,
+        /// Window length up to --before, 1–3600 seconds.
         #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..=3600))]
         seconds: u64,
     },
@@ -93,20 +109,28 @@ struct Noise {
 
 #[derive(Args)]
 struct EventFilters {
+    /// Substring of the command or sequence, or an exact event ID.
     #[arg(long)]
     q: Option<String>,
+    /// Command rules to keep, separated by commas: =exact, a*glob? or a substring.
     #[arg(long)]
     include: Option<String>,
+    /// Command rules to leave out, in the --include syntax.
     #[arg(long)]
     exclude: Option<String>,
+    /// all, inbound or outbound.
     #[arg(long, default_value = "all")]
     direction: String,
+    /// Also list status, loss and end records besides packets.
     #[arg(long)]
     controls: bool,
+    /// Only events after this event ID.
     #[arg(long)]
     after: Option<u64>,
+    /// Only events before this event ID.
     #[arg(long)]
     before: Option<u64>,
+    /// Page size, 1–1000. While has_more is true, pass the returned cursor as --after.
     #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u16).range(1..=1000))]
     limit: u16,
     /// Additional server filters, such as min_size=10 or error_only=true.
@@ -171,8 +195,11 @@ impl EventFilters {
 
 #[derive(Subcommand)]
 enum RecordingCommand {
+    /// List recordings with their state (recording, stopped or error) and output path.
     List,
+    /// Start saving packets from now on; the session may be left out when only one is live.
     Start { session: Option<String> },
+    /// Stop a recording; the recording may be left out when only one is running.
     Stop { recording: Option<String> },
 }
 
@@ -545,12 +572,16 @@ pub struct Agent {
 
 #[derive(Args)]
 struct Installation {
+    /// Same as --scope user.
     #[arg(long = "global", conflicts_with = "project")]
     global_install: bool,
+    /// project writes into the project directory, user into the home directory.
     #[arg(long, default_value = "project")]
     scope: skills::Scope,
+    /// Project directory; the current directory by default.
     #[arg(long)]
     project: Option<PathBuf>,
+    /// Backend selector written into the skill.
     #[arg(long, default_value = DEFAULT_SERVER)]
     server: String,
 }
@@ -559,6 +590,7 @@ struct Installation {
 enum AgentCommand {
     /// Install the generated skill atomically into the selected agent directory.
     Install {
+        /// claude-code, codex or cursor.
         #[arg(long)]
         agent: skills::Agent,
         #[command(flatten)]
@@ -674,17 +706,22 @@ pub fn agent(args: Agent, json_output: bool) -> Result<(), Error> {
 
 #[derive(Args)]
 pub struct Devtools {
+    /// With open: return the debugging link without opening a browser.
     #[arg(long, global = true)]
     no_open: bool,
+    /// Backend selector: auto, @path/to/service.json or a loopback URL.
     #[arg(long, default_value = DEFAULT_SERVER, global = true)]
     server: String,
+    /// Research bridge to control, such as http://127.0.0.1:19860.
     #[arg(long, global = true)]
     endpoint: Option<String>,
     /// Explicit local connection descriptor. Its token stays off stdout.
     #[arg(long, global = true)]
     connection: Option<PathBuf>,
+    /// Act only if the research QQ still has this PID (from the `devtools windows` info).
     #[arg(long, global = true, requires = "birth")]
     pid: Option<u32>,
+    /// Process creation FILETIME that goes with --pid.
     #[arg(long, global = true, requires = "pid")]
     birth: Option<u64>,
     #[command(subcommand)]
@@ -693,18 +730,23 @@ pub struct Devtools {
 
 #[derive(Subcommand)]
 enum DevtoolsCommand {
+    /// Identity of the selected research bridge.
     Info,
+    /// List the research QQ windows with their IDs, titles and URLs.
     Windows,
+    /// Visible text, interactive elements and their selectors in one window.
     Snapshot {
         #[arg(long)]
         window: u32,
     },
+    /// Click the single visible element matching a CSS selector.
     Click {
         #[arg(long)]
         window: u32,
         #[arg(long)]
         selector: String,
     },
+    /// Replace the content of the input matching a CSS selector.
     Fill {
         #[arg(long)]
         window: u32,
@@ -713,12 +755,14 @@ enum DevtoolsCommand {
         #[arg(long)]
         text: String,
     },
+    /// Send one key, such as Enter, Tab or Escape.
     Press {
         #[arg(long)]
         window: u32,
         #[arg(long)]
         key: String,
     },
+    /// Evaluate a bounded expression in one window's renderer.
     Eval {
         #[arg(long)]
         window: u32,
@@ -730,10 +774,12 @@ enum DevtoolsCommand {
         #[arg(long)]
         expression: String,
     },
+    /// Open the Chii DevTools of a window; the current visible window by default.
     Open {
         #[arg(long)]
         window: Option<u32>,
     },
+    /// Save a PNG screenshot of one window.
     Screenshot {
         #[arg(long)]
         window: u32,

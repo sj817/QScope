@@ -71,6 +71,7 @@ pub struct Service {
 enum ServiceCommand {
     /// Keep the backend running until it is explicitly stopped.
     Start(BackendOptions),
+    /// Report whether the backend runs, its endpoint and its active clients.
     Status,
     /// Stop an idle backend. Active QQ and recordings must be stopped first.
     Stop,

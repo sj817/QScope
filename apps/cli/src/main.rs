@@ -112,15 +112,19 @@ enum Command {
 #[command(group(ArgGroup::new("decode_input").required(true).multiple(false)))]
 #[command(group(ArgGroup::new("packet_source").args(["capture", "native"])))]
 struct Decode {
+    /// Hex bytes; spaces are allowed.
     #[arg(long, group = "decode_input")]
     hex: Option<String>,
+    /// File containing hex text.
     #[arg(long, group = "decode_input")]
     hex_file: Option<PathBuf>,
     /// Raw binary file, read without modifying it.
     #[arg(long, group = "decode_input")]
     file: Option<PathBuf>,
+    /// JSONL capture written by import or record.
     #[arg(long, group = "decode_input")]
     capture: Option<PathBuf>,
+    /// Native .qscap probe file.
     #[arg(long, group = "decode_input")]
     native: Option<PathBuf>,
     /// Capture event ID; defaults to 1. IDs and protocol sequence are distinct.
@@ -147,6 +151,7 @@ struct Import {
     hex_file: Option<PathBuf>,
     #[arg(long, group = "import_input")]
     file: Option<PathBuf>,
+    /// New JSONL capture file; an existing file is never replaced.
     #[arg(long)]
     out: PathBuf,
     #[arg(long, value_enum, default_value = "unknown")]

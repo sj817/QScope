@@ -4,7 +4,7 @@ use qscope_automation::{client::Client, devtools, runtime};
 use serde_json::json;
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -15,17 +15,24 @@ pub struct Options {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Download, verify and unpack the official QQ package without starting it.
     Prepare {
+        /// Use an already downloaded official installer instead of downloading it.
         #[arg(long)]
         installer: Option<PathBuf>,
     },
+    /// Start the isolated research QQ with capture and its control bridge; the user logs in.
     Start {
+        /// Separate QQ data directory; each profile keeps its own login.
         #[arg(long, default_value = "automation")]
         profile: String,
+        /// Control bridge port; 19860 for the automation profile, otherwise a free port.
         #[arg(long)]
         port: Option<u16>,
     },
+    /// Report preparation progress, the running PID and its capture session.
     Status,
+    /// Close the research QQ of a profile. Its capture is finished with an end marker.
     Stop {
         #[arg(long, default_value = "automation")]
         profile: String,
@@ -101,54 +108,15 @@ pub fn run(options: Options) -> Result<(), Error> {
 }
 
 fn stop(profile: &str) -> Result<(), Error> {
-    qscope_automation::launcher::validate_profile(profile, 19860)?;
     let data = runtime::user_data()?;
     let connection_file = data
         .join("qq/9.9.37-261103-x64/portable/profiles")
         .join(profile)
         .join(".qscope/devtools.json");
-    let connection = devtools::Connection::connect_file(&connection_file)?;
-    let launches = data.join("automation/launches");
-    runtime::no_links(&launches)?;
-    let mut selected = None;
-    for directory in fs::read_dir(&launches)? {
-        let path = directory?.path().join("launcher.json");
-        runtime::no_links(&path)?;
-        if !path.is_file() || fs::metadata(&path)?.len() > 65536 {
-            continue;
-        }
-        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&fs::read(&path)?) else {
-            continue;
-        };
-        if value["pid"] == connection.info.pid
-            && value["process_birth_filetime"] == connection.info.birth_filetime
-            && value["profile"] == profile
-        {
-            if selected.is_some() {
-                return Err(Error::new(
-                    "qq_identity",
-                    "Multiple owner receipts match this profile",
-                ));
-            }
-            selected = path.parent().map(Path::to_path_buf);
-        }
-    }
-    let owner = selected
-        .ok_or_else(|| Error::new("qq_identity", "No matching QScope owner receipt was found"))?;
-    let stop = owner.join("stop");
-    runtime::no_links(&stop)?;
-    fs::write(stop, b"stop")?;
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while !owner.join("exit.json").is_file() {
-        if Instant::now() >= deadline {
-            return Err(Error::new(
-                "qq_timeout",
-                "The research owner has not finished stopping",
-            ));
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    crate::print_json(
-        &json!({"schema_version":1,"profile":profile,"stopped":true,"pid":connection.info.pid}),
-    )
+    let stopped = qscope_automation::launcher::stop(
+        &data.join("automation/launches"),
+        &connection_file,
+        profile,
+    )?;
+    crate::print_json(&stopped)
 }
