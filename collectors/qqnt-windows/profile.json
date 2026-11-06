@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "build": "9.9.37-54395",
+  "platform": "win32",
+  "architecture": "x64",
+  "module": "wrapper.node",
+  "module_sha256": "fed532ad58d2404dcedf2858554e8fa52a5f4e65b271c008d2faca4011d7d4a2",
+  "send_rva": "0x1c38208",
+  "recv_rva": "0x1c39de8",
+  "send_prefix": "5541574156415541545657534881ec08010000488dac248000000048c7858000",
+  "recv_prefix": "5541574156415541545657534881ec28010000488dac248000000048c785a000",
+  "layout": "libcxx24-msfng-task88-response24",
+  "capture_point": "MSF-NG InternalPushTask / DidRecvResponseData protocol payload; inner encryption may remain",
+  "evidence": "independent IDA analysis of the pinned module; then observed startup, manual login and post-login traffic on 2026-11-05",
+  "send_account_offset": "0x38",
+  "send_account_type_offset": "0x50",
+  "account_evidence": "hypothesis: the send RVA's log call 'MSF task pushed seq:{} uin:{} uin_type:{} cmd:{}' reads uin from the task's libc++ string at +0x38 and uin_type from the u32 at +0x50 (static IDA reading of the pinned module); runtime content not yet observed"
+}
