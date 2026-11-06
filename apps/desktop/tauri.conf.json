@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "QScope",
+  "mainBinaryName": "QScope",
+  "version": "0.1.0",
+  "identifier": "io.github.sj817.qscope",
+  "build": {
+    "frontendDist": "http://127.0.0.1:19840"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": []
+    }
+  },
+  "bundle": {
+    "publisher": "sj817",
+    "active": true,
+    "targets": [],
+    "icon": ["icons/icon.ico", "icons/32x32.png", "icons/128x128.png"],
+    "windows": { "webviewInstallMode": { "type": "skip" } }
+  }
+}
