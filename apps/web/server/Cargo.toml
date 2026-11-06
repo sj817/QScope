@@ -1,0 +1,29 @@
+[package]
+name = "qscope-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+axum = { version = "=0.8.9", features = ["ws"] }
+clap.workspace = true
+http-body-util = "=0.1.5"
+qscope-core.workspace = true
+qscope-automation = { workspace = true, features = ["update"] }
+qscope-qqnt = { path = "../../../collectors/qqnt-windows/host-rs" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "io-util", "process", "time", "sync"] }
+ts-rs = "=12.0.1"
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+futures-util = { version = "=0.3.34", features = ["sink"] }
+
+[dev-dependencies]
+tower = { version = "=0.5.3", features = ["util"] }
+tokio-tungstenite = "=0.29.0"
+
+[lints]
+workspace = true
