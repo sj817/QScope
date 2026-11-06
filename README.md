@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sj817/QScope/releases"><img src="https://img.shields.io/badge/Release-v0.1.0-blue.svg" alt="Release"></a>
+  <a href="https://github.com/sj817/QScope/releases"><img src="https://img.shields.io/badge/Release-v0.1.1-blue.svg" alt="Release"></a>
   <img src="https://img.shields.io/badge/Platform-Windows%20x64-0078d7.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Target-QQNT%209.9.37--54395-00c853.svg" alt="Target">
   <img src="https://img.shields.io/badge/CLI-qs-orange.svg" alt="CLI">
@@ -76,9 +76,9 @@
 1. **打开程序**：启动 `QScope.exe`，进入「设置」页面。
 2. **下载并启动 QQ**：点击「下载并启动 QQ」。工具会自动拉取官方安装包，核验 SHA256 并免安装解包至私有数据目录，以受限沙盒权限拉起客户端。
 3. **手动登录**：在弹出的研究 QQ 窗口中手动扫码登录，随后进行需要观察的操作。
-4. **实时分析**：回到 QScope 即可查看双向原始收发包。可随时开始/停止分段录制，或点击「打开 DevTools」唤起内置页面调试器。
+4. **实时分析**：回到 QScope 即可查看双向原始收发包。可随时开始/停止分段录制，或点击「打开 DevTools」唤起内置页面调试器；用完后在「设置 → QQ 抓包」点击「关闭 QQ」。
 
-> **提示**：关闭 QScope 窗口后，活动 QQ 与后台录制将继续保持运行，再次打开界面会自动重连原有会话。
+> **提示**：退出桌面端会一并关闭从界面启动的研究 QQ，抓包文件会写入结束标记；通过 `qs qq start` 或 AI 启动的 QQ 与录制继续运行，再次打开界面会自动重连。
 >
 > **环境异常**：「设置 → QQ 抓包」的运行环境检查会列出缺失或损坏的组件，可一键修复探针文件和 QQ 解包；安装包本身缺少组件时到「设置 → 更新」下载新版。
 >
