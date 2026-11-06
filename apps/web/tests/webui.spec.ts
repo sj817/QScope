@@ -1171,6 +1171,29 @@ test("settings install each agent into the selected project, copy the universal 
   await expect(page).not.toHaveURL(/page=settings|section=/);
 });
 
+test("settings reopen on the skill scope and project directory last chosen", async ({
+  page,
+}) => {
+  await page.goto("/?page=settings&section=ai");
+  const scope = page.getByRole("group", { name: "技能安装范围" });
+  const global = scope.getByRole("button", { name: "全局", exact: true });
+  const project = scope.getByRole("button", { name: "当前项目", exact: true });
+  await expect(page.getByLabel("项目目录", { exact: true })).toHaveValue(root);
+  await global.click();
+  await expect(global).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("用户目录", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(global).toHaveAttribute("aria-pressed", "true");
+  await project.click();
+  await expect(page.getByLabel("项目目录", { exact: true })).toHaveValue(root);
+  await page.reload();
+  await expect(project).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("项目目录", { exact: true })).toHaveValue(root);
+  await expect(
+    page.getByRole("list", { name: "AI 工具" }).getByRole("listitem"),
+  ).not.toHaveCount(0);
+});
+
 test("CLI queries, decodes, compares and records through the running workbench with exact 64-bit strings", async ({
   request,
 }) => {
@@ -1317,6 +1340,52 @@ test("one DevTools button opens the current visible target without connection or
   await dialog.getByRole("button", { name: "关闭弹窗", exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole("dialog", { name: "QScope 设置" })).toBeVisible();
+});
+
+test("a running research QQ can be closed from the settings", async ({
+  page,
+  request,
+}) => {
+  let stage = "running";
+  let stops: unknown[] = [];
+  const setup = () => ({
+    build: "9.9.37-54395",
+    stage,
+    installed: true,
+    available: true,
+    message: stage === "running" ? "QQ 已运行，流量正在记录" : "未运行",
+    downloaded: "0",
+    total: "334442672",
+    pid: stage === "running" ? 6789 : null,
+    session_id: null,
+    error: null,
+  });
+  await page.route("**/api/v1/settings/qq", (route) =>
+    route.fulfill({ json: setup() }),
+  );
+  await page.route("**/api/v1/settings/qq/stop", (route) => {
+    stops = [...stops, route.request().postDataJSON()];
+    stage = "idle";
+    return route.fulfill({ json: setup() });
+  });
+  await page.goto("/?page=settings");
+  await expect(page.getByText("PID 6789")).toBeVisible();
+  await page.getByRole("button", { name: "关闭 QQ", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "启动 QQ", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "关闭 QQ", exact: true }),
+  ).toHaveCount(0);
+  expect(stops).toEqual([{}]);
+
+  // With nothing running the real service only reports the current state.
+  const idle = await request.post("/api/v1/settings/qq/stop", {
+    headers: { "X-QScope-Client": "web-v1" },
+    data: { page_only: true },
+  });
+  expect(idle.ok()).toBeTruthy();
+  expect((await idle.json()).stage).not.toBe("running");
 });
 
 test("first run prepares QQ with one button, shows progress and opens its capture", async ({

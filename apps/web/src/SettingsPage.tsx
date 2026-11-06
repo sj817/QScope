@@ -45,11 +45,34 @@ const skillStates: Record<string, string> = {
   conflict: "内容有改动",
 };
 
-const initialScope: SkillScope = (
-  window as Window & { __QSCOPE_DESKTOP__?: boolean }
-).__QSCOPE_DESKTOP__
-  ? "user"
-  : "project";
+// The chosen install scope and project directory stay on this machine, so the AI section reopens
+// on the target the user picked instead of a default that hides installed skills.
+const TARGET_KEY = "qscope.skill-target";
+function savedTarget(): { scope: SkillScope; project: string } {
+  const fallback: SkillScope = (
+    window as Window & { __QSCOPE_DESKTOP__?: boolean }
+  ).__QSCOPE_DESKTOP__
+    ? "user"
+    : "project";
+  try {
+    const saved = JSON.parse(localStorage.getItem(TARGET_KEY) || "null");
+    if (saved?.scope === "user" || saved?.scope === "project")
+      return {
+        scope: saved.scope,
+        project: typeof saved.project === "string" ? saved.project : "",
+      };
+  } catch {
+    /* storage unavailable: use the default target */
+  }
+  return { scope: fallback, project: "" };
+}
+function saveTarget(scope: SkillScope, project: string) {
+  try {
+    localStorage.setItem(TARGET_KEY, JSON.stringify({ scope, project }));
+  } catch {
+    /* the choice is simply not remembered */
+  }
+}
 
 // The open section follows the address, so a reload or shared link lands on the same section.
 type Section = "qq" | "ai" | "update";
@@ -72,8 +95,9 @@ export function SettingsPage({
 }) {
   const [section, setSection] = useState<Section>(sectionFromUrl);
   const [settings, setSettings] = useState<IntegrationSettings | null>(null);
-  const [scope, setScope] = useState<SkillScope>(initialScope);
-  const [project, setProject] = useState("");
+  const [initial] = useState(savedTarget);
+  const [scope, setScope] = useState<SkillScope>(initial.scope);
+  const [project, setProject] = useState(initial.project);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<{
     agent: SkillAgent;
@@ -85,11 +109,17 @@ export function SettingsPage({
   const [qqError, setQQError] = useState("");
   const [starting, setStarting] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [frontend, setFrontend] = useState<DevtoolsFrontend | null>(null);
   const startedHere = useRef(false);
   const tabs = useRef(new Map<Section, HTMLButtonElement>());
 
-  async function load(nextScope: SkillScope, directory?: string) {
+  // `directory` is the project to show; in user scope it is only remembered for switching back.
+  async function load(
+    nextScope: SkillScope,
+    directory?: string,
+    remembered = false,
+  ) {
     controller.current?.abort();
     const next = new AbortController();
     controller.current = next;
@@ -104,16 +134,25 @@ export function SettingsPage({
       );
       if (next.signal.aborted) return;
       setSettings(result);
-      if (nextScope === "project") setProject(result.target_directory);
+      const projectDirectory =
+        nextScope === "project" ? result.target_directory : directory || "";
+      if (nextScope === "project") setProject(projectDirectory);
+      saveTarget(nextScope, projectDirectory);
     } catch (error) {
-      if (!abortError(error)) setError(message(error));
+      if (abortError(error)) return;
+      // A remembered project that has since moved falls back to the default target.
+      if (remembered && nextScope === "project" && directory) {
+        void load("project");
+        return;
+      }
+      setError(message(error));
     } finally {
       if (!next.signal.aborted) setLoading(false);
     }
   }
 
   useEffect(() => {
-    void load(initialScope);
+    void load(initial.scope, initial.project, true);
     return () => controller.current?.abort();
   }, []);
   useEffect(() => {
@@ -232,6 +271,18 @@ export function SettingsPage({
       startedHere.current = false;
     } finally {
       setStarting(false);
+    }
+  }
+  async function stopQQ() {
+    setStopping(true);
+    setQQError("");
+    try {
+      setQQ(await request<QQSetup>("/settings/qq/stop", jsonPost({})));
+      notify("QQ 已关闭，抓包已保存");
+    } catch (error) {
+      setQQError(message(error));
+    } finally {
+      setStopping(false);
     }
   }
   async function openDevtools() {
@@ -415,6 +466,16 @@ export function SettingsPage({
                 </div>
               </div>
               <div className="qq-card-actions">
+                {running && (
+                  <button
+                    className="text-button"
+                    disabled={stopping}
+                    title="结束研究 QQ，抓包文件会写入结束标记"
+                    onClick={() => void stopQQ()}
+                  >
+                    {stopping ? "正在关闭…" : "关闭 QQ"}
+                  </button>
+                )}
                 <button
                   className="text-button"
                   disabled={!running || opening}
@@ -426,7 +487,10 @@ export function SettingsPage({
                 <button
                   className="primary-button"
                   disabled={
-                    !qq?.available || busy || (running && !qq.session_id)
+                    !qq?.available ||
+                    busy ||
+                    stopping ||
+                    (running && !qq.session_id)
                   }
                   onClick={() => void startQQ()}
                 >
@@ -518,6 +582,84 @@ export function SettingsPage({
             )}
             {settings && (
               <>
+                <h4 className="pane-subhead">安装范围与路径</h4>
+                <div className="settings-group">
+                  <div className="settings-row">
+                    <span className="settings-row-label">范围</span>
+                    <div
+                      className="segmented"
+                      role="group"
+                      aria-label="技能安装范围"
+                    >
+                      <button
+                        aria-pressed={scope === "project"}
+                        disabled={loading || Boolean(pending)}
+                        onClick={() => {
+                          setScope("project");
+                          void load("project", project);
+                        }}
+                      >
+                        当前项目
+                      </button>
+                      <button
+                        aria-pressed={scope === "user"}
+                        disabled={loading || Boolean(pending)}
+                        onClick={() => {
+                          setScope("user");
+                          void load("user", project);
+                        }}
+                      >
+                        全局
+                      </button>
+                    </div>
+                  </div>
+                  {scope === "project" ? (
+                    <form
+                      className="settings-row"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void load(scope, project);
+                      }}
+                    >
+                      <label
+                        className="settings-row-label"
+                        htmlFor="skill-project-path"
+                      >
+                        项目目录
+                      </label>
+                      <input
+                        id="skill-project-path"
+                        className="settings-input mono"
+                        value={project}
+                        onChange={(event) => setProject(event.target.value)}
+                        disabled={Boolean(pending)}
+                      />
+                      <button
+                        className="text-button"
+                        disabled={loading || Boolean(pending)}
+                      >
+                        更新目标
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="settings-row">
+                      <span className="settings-row-label">用户目录</span>
+                      <code className="settings-code">
+                        {settings.home_directory}
+                      </code>
+                    </div>
+                  )}
+                  {!settings.cli_available && (
+                    <div className="settings-row">
+                      <span className="settings-row-text warn-text">
+                        还没有可用的 QScope
+                        CLI，暂时无法安装技能。开发环境先运行 cargo build -p
+                        qscope-cli。
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <div className="agent-list" role="list" aria-label="AI 工具">
                   {settings.targets.map((target) => (
                     <div
@@ -525,7 +667,7 @@ export function SettingsPage({
                       role="listitem"
                       key={target.agent}
                     >
-                      <div className="agent-text">
+                      <div className="agent-text" title={target.path}>
                         <strong>{target.name}</strong>
                         <span
                           className={
@@ -592,106 +734,6 @@ export function SettingsPage({
                   安装后在对应 AI
                   中重新加载技能或新开会话。金融相关开发、逆向、抓包和自动操作均在技能禁用范围内。
                 </p>
-
-                <h4 className="pane-subhead">安装范围与路径</h4>
-                <div className="settings-group">
-                  <div className="settings-row">
-                    <span className="settings-row-label">范围</span>
-                    <div
-                      className="segmented"
-                      role="group"
-                      aria-label="技能安装范围"
-                    >
-                      <button
-                        aria-pressed={scope === "project"}
-                        disabled={loading || Boolean(pending)}
-                        onClick={() => {
-                          setScope("project");
-                          void load("project", project);
-                        }}
-                      >
-                        当前项目
-                      </button>
-                      <button
-                        aria-pressed={scope === "user"}
-                        disabled={loading || Boolean(pending)}
-                        onClick={() => {
-                          setScope("user");
-                          void load("user");
-                        }}
-                      >
-                        全局
-                      </button>
-                    </div>
-                  </div>
-                  {scope === "project" ? (
-                    <form
-                      className="settings-row"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void load(scope, project);
-                      }}
-                    >
-                      <label
-                        className="settings-row-label"
-                        htmlFor="skill-project-path"
-                      >
-                        项目目录
-                      </label>
-                      <input
-                        id="skill-project-path"
-                        className="settings-input mono"
-                        value={project}
-                        onChange={(event) => setProject(event.target.value)}
-                        disabled={Boolean(pending)}
-                      />
-                      <button
-                        className="text-button"
-                        disabled={loading || Boolean(pending)}
-                      >
-                        更新目标
-                      </button>
-                    </form>
-                  ) : (
-                    <div className="settings-row">
-                      <span className="settings-row-label">用户目录</span>
-                      <code className="settings-code">
-                        {settings.home_directory}
-                      </code>
-                    </div>
-                  )}
-                  <div className="settings-row">
-                    <span className="settings-row-label">CLI</span>
-                    <code className="settings-code">{settings.cli_path}</code>
-                    <span
-                      className={`install-state ${settings.cli_available ? "installed" : "conflict"}`}
-                    >
-                      {settings.cli_available ? "已就绪" : "尚未构建"}
-                    </span>
-                    <button
-                      className="icon-button"
-                      aria-label="复制 CLI 路径"
-                      title="复制 CLI 路径"
-                      onClick={() => void copy(settings.cli_path)}
-                    >
-                      <Icon name="copy" size={14} />
-                    </button>
-                  </div>
-                  <details className="settings-details">
-                    <summary>各 AI 的安装路径</summary>
-                    <div className="settings-paths">
-                      {settings.targets.map((target) => (
-                        <div key={target.agent}>
-                          <strong>{target.name}</strong>
-                          <code>{target.path}</code>
-                          {target.permissions_path && (
-                            <code>{target.permissions_path}</code>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                </div>
 
                 <h4 className="pane-subhead">其他 AI 工具</h4>
                 <div className="settings-group">
