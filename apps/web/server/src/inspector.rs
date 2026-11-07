@@ -8,7 +8,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use futures_util::{SinkExt, StreamExt, stream::SplitSink};
+use futures_util::{SinkExt, StreamExt, future::join_all, stream::SplitSink};
 use qscope_automation::{client::Client, display_path};
 use serde::Serialize;
 use std::{
@@ -16,11 +16,12 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{mpsc, oneshot};
 
 const MAX_TARGETS: usize = 16;
 const MAX_CLIENTS: usize = 4;
 const MAX_MESSAGE: usize = 1024 * 1024;
+const EVENT_QUEUE: usize = 16;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Frontend {
@@ -63,14 +64,23 @@ struct Target {
     generation: String,
     metadata: serde_json::Value,
     commands: mpsc::Sender<Message>,
-    events: broadcast::Sender<Message>,
+    clients: BTreeMap<String, InspectorClient>,
 }
+
+struct InspectorClient {
+    events: mpsc::Sender<Message>,
+    // Removing a client also cancels its relay, rather than leaving it alive
+    // while a timed-out frontend slowly drains previously queued events.
+    _lifetime: oneshot::Sender<()>,
+}
+
+type Registry = Arc<Mutex<BTreeMap<String, Target>>>;
 
 #[derive(Default)]
 pub struct Manager {
     frontend: Option<Frontend>,
     public: PathBuf,
-    targets: Arc<Mutex<BTreeMap<String, Target>>>,
+    targets: Registry,
 }
 
 impl Manager {
@@ -236,9 +246,62 @@ async fn send(socket: &mut SplitSink<WebSocket, Message>, message: Message) -> b
     )
 }
 
+fn remove_client(registry: &Registry, target_id: &str, generation: &str, client_id: &str) -> bool {
+    registry.lock().is_ok_and(|mut targets| {
+        targets
+            .get_mut(target_id)
+            .filter(|target| target.generation == generation)
+            .is_some_and(|target| target.clients.remove(client_id).is_some())
+    })
+}
+
+async fn forward_event(
+    registry: &Registry,
+    target_id: &str,
+    generation: &str,
+    message: Message,
+) -> Result<(), &'static str> {
+    let clients = {
+        let targets = registry.lock().map_err(|_| "target_registry_lock")?;
+        let target = targets
+            .get(target_id)
+            .filter(|target| target.generation == generation)
+            .ok_or("target_generation_changed")?;
+        target
+            .clients
+            .iter()
+            .map(|(id, client)| (id.clone(), client.events.clone()))
+            .collect::<Vec<_>>()
+    };
+    // Each client has at most EVENT_QUEUE pending frames, each bounded by
+    // MAX_MESSAGE. Wait outside the registry lock and in parallel, so one slow
+    // frontend cannot delay delivery to another by a separate timeout per client.
+    let results = join_all(clients.into_iter().map(|(id, sender)| {
+        let message = message.clone();
+        async move {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), sender.send(message))
+                .await
+            {
+                Ok(Ok(())) => None,
+                result => Some((id, result.is_err())),
+            }
+        }
+    }))
+    .await;
+    for (client, timed_out) in results.into_iter().flatten() {
+        if remove_client(registry, target_id, generation, &client) && timed_out {
+            eprintln!(
+                "{}",
+                serde_json::json!({"component":"devtools","code":"client_event_queue_timeout"})
+            );
+        }
+    }
+    Ok(())
+}
+
 async fn relay(
     socket: WebSocket,
-    registry: Arc<Mutex<BTreeMap<String, Target>>>,
+    registry: Registry,
     kind: String,
     id: String,
     query: BTreeMap<String, String>,
@@ -252,7 +315,6 @@ async fn relay(
             Err(_) => return,
         };
         let (commands, mut receiver) = mpsc::channel(16);
-        let (events, _) = broadcast::channel(16);
         let metadata = serde_json::json!({"id": id, "title": query.get("title"), "url": query.get("url"), "favicon": query.get("favicon"), "rtc": false});
         {
             let Ok(mut targets) = registry.lock() else {
@@ -267,7 +329,7 @@ async fn relay(
                     generation: generation.clone(),
                     metadata,
                     commands,
-                    events: events.clone(),
+                    clients: BTreeMap::new(),
                 },
             );
         }
@@ -276,8 +338,7 @@ async fn relay(
                 while let Some(message) = reader.next().await {
                     match message {
                         Ok(message @ (Message::Text(_) | Message::Binary(_))) => {
-                            let _ = events.send(message);
-                            tokio::task::yield_now().await;
+                            forward_event(&registry, &id, &generation, message).await?;
                         }
                         Ok(Message::Ping(data)) => controls
                             .try_send(Message::Pong(data))
@@ -316,15 +377,37 @@ async fn relay(
         let Some(target_id) = query.get("target") else {
             return;
         };
-        let (commands, mut events) = {
-            let Ok(targets) = registry.lock() else { return };
-            let Some(target) = targets.get(target_id) else {
+        // A fresh internal ID distinguishes simultaneous tabs using the same
+        // frontend URL and prevents an old connection from removing a new one.
+        let client_id = match qscope_automation::runtime::instance_id() {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        let (generation, commands, mut events, disconnected) = {
+            let Ok(mut targets) = registry.lock() else {
                 return;
             };
-            if target.events.receiver_count() >= MAX_CLIENTS {
+            let Some(target) = targets.get_mut(target_id) else {
+                return;
+            };
+            if target.clients.len() >= MAX_CLIENTS {
                 return;
             }
-            (target.commands.clone(), target.events.subscribe())
+            let (events, receiver) = mpsc::channel(EVENT_QUEUE);
+            let (lifetime, disconnected) = oneshot::channel();
+            target.clients.insert(
+                client_id.clone(),
+                InspectorClient {
+                    events,
+                    _lifetime: lifetime,
+                },
+            );
+            (
+                target.generation.clone(),
+                target.commands.clone(),
+                receiver,
+                disconnected,
+            )
         };
         result = {
             let incoming = async {
@@ -355,11 +438,7 @@ async fn relay(
             let outgoing = async {
                 loop {
                     let message = tokio::select! {
-                        message = events.recv() => match message {
-                            Ok(message) => message,
-                            Err(broadcast::error::RecvError::Closed) => return Ok(()),
-                            Err(broadcast::error::RecvError::Lagged(_)) => return Err("event_queue_lagged"),
-                        },
+                        message = events.recv() => match message { Some(message) => message, None => return Ok(()) },
                         message = control_messages.recv() => match message { Some(message) => message, None => return Ok(()) },
                     };
                     if !send(&mut writer, message).await {
@@ -367,8 +446,13 @@ async fn relay(
                     }
                 }
             };
-            tokio::select! { result = incoming => result, result = outgoing => result }
+            tokio::select! {
+                result = incoming => result,
+                result = outgoing => result,
+                _ = disconnected => Ok(()),
+            }
         };
+        remove_client(&registry, target_id, &generation, &client_id);
     }
     if let Err(code) = result {
         eprintln!(
@@ -377,4 +461,130 @@ async fn relay(
         );
     }
     let _ = send(&mut writer, Message::Close(None)).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn registry(clients: BTreeMap<String, mpsc::Sender<Message>>) -> Registry {
+        let (commands, _) = mpsc::channel(1);
+        let clients = clients
+            .into_iter()
+            .map(|(id, events)| {
+                let (lifetime, _) = oneshot::channel();
+                (
+                    id,
+                    InspectorClient {
+                        events,
+                        _lifetime: lifetime,
+                    },
+                )
+            })
+            .collect();
+        Arc::new(Mutex::new(BTreeMap::from([(
+            "fixture".into(),
+            Target {
+                generation: "current-target".into(),
+                metadata: serde_json::Value::Null,
+                commands,
+                clients,
+            },
+        )])))
+    }
+
+    #[tokio::test]
+    async fn slow_client_is_bounded_and_removed_without_delaying_healthy_delivery() {
+        let (slow, mut unread) = mpsc::channel(EVENT_QUEUE);
+        let (healthy, mut received) = mpsc::channel(EVENT_QUEUE);
+        let (closed, closed_receiver) = mpsc::channel(EVENT_QUEUE);
+        drop(closed_receiver);
+        let registry = registry(BTreeMap::from([
+            ("slow".into(), slow),
+            ("healthy".into(), healthy),
+            ("closed".into(), closed),
+        ]));
+        let (delivered, ready) = tokio::sync::oneshot::channel();
+        let consumer = tokio::spawn(async move {
+            for index in 0..=EVENT_QUEUE {
+                assert_eq!(
+                    received.recv().await.unwrap().into_text().unwrap(),
+                    index.to_string()
+                );
+            }
+            delivered.send(()).unwrap();
+        });
+        for index in 0..EVENT_QUEUE {
+            forward_event(
+                &registry,
+                "fixture",
+                "current-target",
+                Message::Text(index.to_string().into()),
+            )
+            .await
+            .unwrap();
+        }
+        assert_eq!(unread.len(), EVENT_QUEUE);
+        assert!(
+            !registry.lock().unwrap()["fixture"]
+                .clients
+                .contains_key("closed")
+        );
+        let pending_registry = registry.clone();
+        let pending = tokio::spawn(async move {
+            forward_event(
+                &pending_registry,
+                "fixture",
+                "current-target",
+                Message::Text(EVENT_QUEUE.to_string().into()),
+            )
+            .await
+        });
+        // The healthy frontend gets the last event before the slow frontend's
+        // five-second timeout, while the slow queue remains fixed in size.
+        tokio::time::timeout(std::time::Duration::from_secs(1), ready)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!pending.is_finished());
+        assert_eq!(unread.len(), EVENT_QUEUE);
+        tokio::time::timeout(std::time::Duration::from_secs(6), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        consumer.await.unwrap();
+        let clients = &registry.lock().unwrap()["fixture"].clients;
+        assert_eq!(clients.len(), 1);
+        assert!(clients.contains_key("healthy"));
+        for index in 0..EVENT_QUEUE {
+            assert_eq!(
+                unread.try_recv().unwrap().into_text().unwrap(),
+                index.to_string()
+            );
+        }
+        assert!(matches!(
+            unread.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected)
+        ));
+    }
+
+    #[test]
+    fn stale_client_cleanup_preserves_the_reconnected_target() {
+        let (events, _receiver) = mpsc::channel(EVENT_QUEUE);
+        let registry = registry(BTreeMap::from([("client".into(), events)]));
+        assert!(!remove_client(&registry, "fixture", "old-target", "client"));
+        assert!(
+            registry.lock().unwrap()["fixture"]
+                .clients
+                .contains_key("client")
+        );
+        assert!(remove_client(
+            &registry,
+            "fixture",
+            "current-target",
+            "client"
+        ));
+        assert!(registry.lock().unwrap()["fixture"].clients.is_empty());
+    }
 }
