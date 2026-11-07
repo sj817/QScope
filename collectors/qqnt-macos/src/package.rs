@@ -1,4 +1,4 @@
-//! Identity of the one Mac build whose capture layout has been observed live.
+//! 已经通过实际采集观察的 Mac 构建身份。
 use qscope_automation::{Error, runtime};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -113,8 +113,7 @@ pub struct HookProfile {
     pub module_sha256: String,
 }
 
-/// Discover both entries afresh, then constrain them to the one observed ABI.
-/// Neither a successful generic scan nor a plausible RVA is sufficient alone.
+/// 每次重新定位两个入口，并验证它们符合已观察 ABI，通用扫描候选仍需经过独立验证。
 pub fn capture_profile(app: &Path) -> Result<HookProfile, Error> {
     let module = app.join(MODULE);
     runtime::no_links(&module)?;
@@ -256,7 +255,7 @@ pub fn capture_profile(app: &Path) -> Result<HookProfile, Error> {
     })
 }
 
-/// Verify the original extracted QQ.app, not the modified research copy.
+/// 验证官方解包出的原始 QQ.app。
 pub fn verify_client(app: &Path, identity: &Identity) -> Result<(), Error> {
     for module in &identity.modules {
         if file_sha256(&app.join(&module.path))? != module.sha256 {

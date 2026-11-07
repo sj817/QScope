@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ByteRange,
   EventSummary,
@@ -26,7 +26,7 @@ const formats = [
   { id: "hex", name: "Hex" },
 ];
 
-// One labelled fact in the header; values that are worth pasting copy on click.
+// 标题中的带标签信息支持点击复制适合粘贴的值。
 function Fact({
   label,
   value,
@@ -91,6 +91,14 @@ function ancestors(
   return null;
 }
 
+function allBranches(nodes: FieldNode[]): string[] {
+  return nodes.flatMap((node) =>
+    visibleChildren(node).length
+      ? [node.id, ...allBranches(visibleChildren(node))]
+      : [],
+  );
+}
+
 export type DetailExtras = {
   compared?: boolean;
   onCompare?: () => void;
@@ -137,22 +145,16 @@ export function Detail({
   );
   const hexScroll = useRef<HTMLDivElement>(null);
   const treeScroll = useRef<HTMLDivElement>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const pageRequest = useRef<AbortController | null>(null);
-  // Pages that arrive later open like the first one unless every field was folded.
+  const [pageOffset, setPageOffset] = useState<number | null>(null);
+  // 后续字段页沿用首批展开状态，全部折叠时继续保持折叠。
   const openNew = useRef(true);
   const rangeAnchor = useRef<HTMLDivElement>(null);
   const packet = event.kind === "packet";
-  function allBranches(nodes: FieldNode[]): string[] {
-    return nodes.flatMap((n) =>
-      visibleChildren(n).length
-        ? [n.id, ...allBranches(visibleChildren(n))]
-        : [],
-    );
-  }
-  useEffect(() => {
+  const [expandedFor, setExpandedFor] = useState({ highlight, detail });
+  if (expandedFor.highlight !== highlight || expandedFor.detail !== detail) {
+    setExpandedFor({ highlight, detail });
     if (highlight && detail) setExpanded(new Set(allBranches(detail.nodes)));
-  }, [highlight, detail]);
+  }
   function toggleHex() {
     const next = !hexOpen;
     setHexOpen(next);
@@ -168,19 +170,21 @@ export function Detail({
     return () => document.removeEventListener("pointerdown", outside);
   }, [rangeOpen]);
 
-  function detailQuery(nodeOffset?: number) {
-    const query = new URLSearchParams({ format, offset: String(range.offset) });
-    if (range.length !== undefined) query.set("length", String(range.length));
-    if (nodeOffset) query.set("node_offset", String(nodeOffset));
-    return `/sessions/${sessionId}/events/${event.event_id}?${query}`;
+  const query = new URLSearchParams({ format, offset: String(range.offset) });
+  if (range.length !== undefined) query.set("length", String(range.length));
+  const detailUrl = `/sessions/${sessionId}/events/${event.event_id}?${query}`;
+  const [previousUrl, setPreviousUrl] = useState(detailUrl);
+  const queryChanged = previousUrl !== detailUrl;
+  if (queryChanged) {
+    setPreviousUrl(detailUrl);
+    setLoading(true);
+    setError("");
+    setPageOffset(null);
   }
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    setLoadingMore(false);
     openNew.current = true;
-    request<PacketDetail>(detailQuery(), { signal: controller.signal })
+    request<PacketDetail>(detailUrl, { signal: controller.signal })
       .then((result) => {
         if (!controller.signal.aborted) {
           setDetail(result);
@@ -197,44 +201,57 @@ export function Detail({
       });
     return () => {
       controller.abort();
-      pageRequest.current?.abort();
     };
-  }, [sessionId, event.event_id, format, range.offset, range.length]);
-  async function loadMore() {
-    const next = detail?.next_node_offset;
-    if (next == null || loadingMore) return;
-    const controller = new AbortController();
-    pageRequest.current = controller;
-    setLoadingMore(true);
-    try {
-      const page = await request<PacketDetail>(detailQuery(next), {
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) return;
-      setDetail(
-        (previous) =>
-          previous && {
-            ...previous,
-            nodes: mergeNodes(previous.nodes, page.nodes),
-            next_node_offset: page.next_node_offset,
-            view_limited: page.view_limited,
-          },
-      );
-      if (openNew.current)
-        setExpanded(
-          (previous) => new Set([...previous, ...initialExpanded(page.nodes)]),
-        );
-    } catch (error) {
-      if (!abortError(error)) setError(message(error));
-    } finally {
-      if (!controller.signal.aborted) setLoadingMore(false);
-    }
-  }
-  // A field search reads the remaining pages so it covers the whole view.
+  }, [detailUrl]);
+  const nextOffset = detail?.next_node_offset;
+  // 搜索持续请求后续页，手动加载与自动加载共用同一个请求状态。
+  if (
+    !queryChanged &&
+    highlight &&
+    nextOffset != null &&
+    !loading &&
+    !error &&
+    pageOffset === null
+  )
+    setPageOffset(nextOffset);
+  const loadingMore = pageOffset !== null;
+  const loadMore = useCallback(() => {
+    if (nextOffset == null || loading || pageOffset !== null) return;
+    setError("");
+    setPageOffset(nextOffset);
+  }, [nextOffset, loading, pageOffset]);
   useEffect(() => {
-    if (highlight && detail?.next_node_offset != null && !loadingMore)
-      void loadMore();
-  }, [highlight, detail?.next_node_offset, loadingMore]);
+    if (pageOffset === null || loading) return;
+    const controller = new AbortController();
+    void request<PacketDetail>(`${detailUrl}&node_offset=${pageOffset}`, {
+      signal: controller.signal,
+    })
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setPageOffset(null);
+        setDetail(
+          (previous) =>
+            previous && {
+              ...previous,
+              nodes: mergeNodes(previous.nodes, page.nodes),
+              next_node_offset: page.next_node_offset,
+              view_limited: page.view_limited,
+            },
+        );
+        if (openNew.current)
+          setExpanded(
+            (previous) =>
+              new Set([...previous, ...initialExpanded(page.nodes)]),
+          );
+      })
+      .catch((error) => {
+        if (!abortError(error)) {
+          setError(message(error));
+          setPageOffset(null);
+        }
+      });
+    return () => controller.abort();
+  }, [detailUrl, pageOffset, loading]);
 
   function scrollHex(start: number) {
     if (hexScroll.current)
@@ -355,7 +372,7 @@ export function Detail({
       );
     requestAnimationFrame(() => scrollHex(node.range.start));
   }
-  // Right-click only opens the menu; the selected field changes through its items.
+  // 右键打开菜单，选中字段通过菜单动作修改。
   function fieldMenu(
     node: FieldNode,
     path: string,
@@ -462,7 +479,7 @@ export function Detail({
     });
   }
 
-  // Less frequent packet actions share one menu so the command keeps its width.
+  // 低频包操作共用菜单，为命令名称保留宽度。
   function moreMenu(button: HTMLElement) {
     const box = button.getBoundingClientRect();
     const view = [
@@ -716,7 +733,7 @@ export function Detail({
                   </span>
                 )}
               </div>
-              {/* Tree tools share the row when there is room and take their own row otherwise. */}
+              {/* 空间足够时工具共用一行，否则独立换行。 */}
               <div className="tools-tree">
                 {format !== "hex" && (
                   <>

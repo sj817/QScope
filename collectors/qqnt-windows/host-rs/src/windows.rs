@@ -1,7 +1,7 @@
 pub fn notify_environment_changed() {
     const ENVIRONMENT: &[u16] = &[69, 110, 118, 105, 114, 111, 110, 109, 101, 110, 116, 0];
     let mut result = 0;
-    // WM_SETTINGCHANGE marshals this fixed string to the user's shell.
+    // WM_SETTINGCHANGE 将此固定字符串传递给用户 shell。
     unsafe {
         windows_sys::Win32::UI::WindowsAndMessaging::SendMessageTimeoutW(
             windows_sys::Win32::UI::WindowsAndMessaging::HWND_BROADCAST,
@@ -17,11 +17,34 @@ pub fn notify_environment_changed() {
 use qscope_automation::Error;
 use std::{ffi::c_void, os::windows::ffi::OsStrExt, path::Path};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, FILETIME},
+    Foundation::{
+        CloseHandle, FILETIME, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+    },
     System::Threading::{
         GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
     },
 };
+
+/// 防止后台子进程保留调用方的标准流；重定向时由 Rust 单独复制所需句柄。
+pub fn isolate_standard_handles() -> Result<(), Error> {
+    use std::os::windows::io::AsRawHandle;
+    for handle in [
+        std::io::stdin().as_raw_handle(),
+        std::io::stdout().as_raw_handle(),
+        std::io::stderr().as_raw_handle(),
+    ] {
+        if !handle.is_null()
+            && handle != INVALID_HANDLE_VALUE
+            && unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) } == 0
+        {
+            return Err(Error::new(
+                "standard_handles",
+                std::io::Error::last_os_error().to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
 
 #[repr(C)]
 struct SessionOptions {
@@ -34,6 +57,8 @@ struct SessionOptions {
     capture: *const u16,
     port: u32,
     flags: u32,
+    send_rva: u32,
+    recv_rva: u32,
 }
 
 unsafe extern "C" {
@@ -51,7 +76,7 @@ fn wide(value: &std::ffi::OsStr) -> Vec<u16> {
     value.encode_wide().chain(Some(0)).collect()
 }
 fn native_error() -> Error {
-    // The C++ adapter owns this thread-local, NUL-terminated error buffer.
+    // C++ 适配层拥有线程局部、以 NUL 结尾的错误缓冲区。
     unsafe {
         let message = qscope_session_error();
         let mut length = 0;
@@ -77,6 +102,7 @@ pub struct ResearchOptions<'a> {
     pub self_test: bool,
     pub diagnostics: bool,
     pub paused: bool,
+    pub targets: [u32; 2],
 }
 
 pub struct Session(*mut c_void);
@@ -105,6 +131,8 @@ impl Session {
             flags: u32::from(options.self_test)
                 | (u32::from(options.diagnostics) << 1)
                 | (u32::from(options.paused) << 2),
+            send_rva: options.targets[0],
+            recv_rva: options.targets[1],
         };
         let context = unsafe { qscope_session_start(&raw) };
         if context.is_null() {
@@ -263,7 +291,7 @@ pub fn close_window(pid: u32, title: &str) -> Result<bool, Error> {
         window: HWND,
     }
     unsafe extern "system" fn visit(window: HWND, context: LPARAM) -> i32 {
-        // EnumWindows calls this synchronously while Search is alive.
+        // EnumWindows 在 Search 存活期间同步调用此回调。
         let search = unsafe { &mut *(context as *mut Search) };
         let mut pid = 0;
         unsafe {

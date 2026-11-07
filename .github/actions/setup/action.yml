@@ -1,0 +1,33 @@
+name: setup
+description: 安装锁定的 Node、pnpm 和 Rust，并恢复公共依赖缓存
+inputs:
+  rust:
+    description: 是否安装 Rust 工具链
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: 安装锁定的 pnpm
+      uses: pnpm/action-setup@v6
+    - name: 安装 Node 并恢复依赖缓存
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24.22.1
+        cache: pnpm
+    - name: 安装工作区依赖
+      run: pnpm install --frozen-lockfile
+      shell: bash
+    - name: 安装 Rust 工具链
+      uses: dtolnay/rust-toolchain@master
+      if: inputs.rust == 'true'
+      with:
+        toolchain: 1.97.0
+        components: rustfmt, clippy
+    - name: 恢复 Rust 缓存
+      uses: Swatinem/rust-cache@v2
+      if: inputs.rust == 'true'
+    - name: 恢复原生依赖缓存
+      uses: actions/cache@v6
+      with:
+        path: .cache/dependencies
+        key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('collectors/qqnt-windows/dependencies.json', 'apps/desktop/runtimes.json', 'scripts/build-native-macos.ts') }}

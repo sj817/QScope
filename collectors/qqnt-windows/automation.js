@@ -454,7 +454,7 @@
       try {
         saveStatus({ ...status, ready: false, error: error.message });
       } catch {
-        /* status is best effort */
+        /* 状态报告允许失败 */
       }
     });
     server.listen(port, "127.0.0.1", () =>
@@ -471,7 +471,7 @@
         }),
       );
     } catch {
-      /* status is best effort */
+      /* 状态报告允许失败 */
     }
   }
 })();

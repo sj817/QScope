@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
-/// JSON represents every arbitrary 64-bit integer as a decimal string.
+/// JSON 中任意 64 位整数均表示为十进制字符串。
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct U64(pub u64);
 

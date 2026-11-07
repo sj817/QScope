@@ -29,16 +29,16 @@ use std::{
     about = "QScope raw QQ capture and binary protocol inspection"
 )]
 struct Cli {
-    /// Use a separate QScope data directory and backend instance.
+    /// 使用独立 QScope 数据目录和后台实例。
     #[arg(long, global = true, conflicts_with = "portable")]
     data_dir: Option<PathBuf>,
-    /// Store data beside the executable.
+    /// 将数据保存在可执行文件旁。
     #[arg(long, global = true)]
     portable: bool,
-    /// Write machine-readable results to stdout and structured errors to stderr.
+    /// 标准输出提供机器可读结果，标准错误输出提供结构化错误。
     #[arg(long, global = true)]
     json: bool,
-    /// Print selected runtime paths to stderr.
+    /// 将选定的运行路径写入标准错误输出。
     #[arg(long, global = true)]
     verbose: bool,
     #[command(subcommand)]
@@ -47,60 +47,60 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Inspect local resources, backend state and supported QQ capabilities.
+    /// 检查本机资源、后台状态和 QQ 能力。
     Doctor,
-    /// Prepare or manage an isolated research QQ.
+    /// 准备或管理隔离研究 QQ。
     Qq(qq::Options),
     #[command(name = "__collector", hide = true)]
     Collector {
         #[arg(num_args = 1.., allow_hyphen_values = true)]
         arguments: Vec<std::ffi::OsString>,
     },
-    /// Install, inspect or remove the global qs command.
+    /// 安装、检查或移除全局 qs 命令。
     Cli(command_path::Options),
     #[command(name = "__service", hide = true)]
     Engine { config: PathBuf },
-    /// Manage the shared local backend.
+    /// 管理共享本机后台。
     Service(web::Service),
     #[command(hide = true)]
     ExtractQq {
         installer: PathBuf,
         destination: PathBuf,
     },
-    /// Serve the embedded WebUI with the local Rust API.
+    /// 通过本机 Rust API 提供内嵌 WebUI。
     #[command(alias = "serve")]
     Web(web::Options),
-    /// Verify and prepare the embedded auxiliary components in the user data directory.
+    /// 在用户数据目录校验并准备内嵌辅助组件。
     #[command(hide = true)]
     Runtime {},
-    /// Query, record and analyze a running local QScope workbench.
+    /// 查询、录制和分析运行中的本机工作台。
     #[command(name = "capture", visible_alias = "live")]
     Live(automation::Live),
-    /// Install or inspect the QScope skill for coding agents.
+    /// 安装或检查 AI 编程工具的 QScope 技能。
     Agent(automation::Agent),
-    /// Inspect and control an explicitly enabled QQ research bridge.
+    /// 检查并控制显式启用的 QQ 研究控制桥。
     Devtools(automation::Devtools),
-    /// Inspect bytes without assuming field names or protobuf declaration types.
+    /// 基于原始字节检查结构，字段名称与声明类型保持未知。
     Decode(Decode),
-    /// Read a native probe file, including complete records from an interrupted session.
+    /// 读取原生探针文件，同时保留中断会话中的完整记录。
     Native {
         path: PathBuf,
-        /// Follow the append-only probe file until its footer or Ctrl+C.
+        /// 跟踪追加式探针文件，直到结束标记或 Ctrl+C。
         #[arg(long)]
         follow: bool,
-        /// Maximum displayed records when not following; all records are still checked.
+        /// 离线读取时的最大显示记录数，校验仍覆盖全部记录。
         #[arg(long, default_value_t = 200)]
         limit: usize,
     },
-    /// Check GitHub for a newer QScope release and install it.
+    /// 检查并安装 GitHub 上的新 QScope 版本。
     Update(update::Options),
-    /// Save user-supplied bytes as a new, verifiable capture session.
+    /// 将用户提供的字节保存为可校验的新抓包会话。
     Import(Import),
-    /// Validate every record, payload hash, ordering rule and closing counter.
+    /// 校验每条记录、包体哈希、排序规则及结束计数。
     Inspect { path: PathBuf },
-    /// Validate a collector JSONL stream and publish a new capture on clean end.
+    /// 校验采集器 JSONL 流，在正常结束后发布新抓包。
     Record {
-        /// JSONL file, or - for stdin. No process is attached automatically.
+        /// JSONL 文件路径，使用 - 从标准输入读取。
         #[arg(long, default_value = "-")]
         input: PathBuf,
         #[arg(long)]
@@ -112,22 +112,22 @@ enum Command {
 #[command(group(ArgGroup::new("decode_input").required(true).multiple(false)))]
 #[command(group(ArgGroup::new("packet_source").args(["capture", "native"])))]
 struct Decode {
-    /// Hex bytes; spaces are allowed.
+    /// 十六进制字节，允许空格。
     #[arg(long, group = "decode_input")]
     hex: Option<String>,
-    /// File containing hex text.
+    /// 保存十六进制文本的文件。
     #[arg(long, group = "decode_input")]
     hex_file: Option<PathBuf>,
-    /// Raw binary file, read without modifying it.
+    /// 以只读方式读取原始二进制文件。
     #[arg(long, group = "decode_input")]
     file: Option<PathBuf>,
-    /// JSONL capture written by import or record.
+    /// 由导入或录制生成的 JSONL 抓包。
     #[arg(long, group = "decode_input")]
     capture: Option<PathBuf>,
-    /// Native .qscap probe file.
+    /// 原生 .qscap 探针文件。
     #[arg(long, group = "decode_input")]
     native: Option<PathBuf>,
-    /// Capture event ID; defaults to 1. IDs and protocol sequence are distinct.
+    /// 抓包事件 ID，默认值为 1，与协议序号独立。
     #[arg(long, requires = "packet_source")]
     event_id: Option<u64>,
     #[arg(long, value_enum, default_value = "pb")]
@@ -151,7 +151,7 @@ struct Import {
     hex_file: Option<PathBuf>,
     #[arg(long, group = "import_input")]
     file: Option<PathBuf>,
-    /// New JSONL capture file; an existing file is never replaced.
+    /// 新 JSONL 抓包文件，目标路径必须尚未存在。
     #[arg(long)]
     out: PathBuf,
     #[arg(long, value_enum, default_value = "unknown")]
@@ -352,7 +352,7 @@ fn print_message(message: &Message, depth: usize, output: &mut impl Write) -> io
     Ok(())
 }
 
-/// A failed or disconnected producer never publishes an apparently complete file.
+/// 生产者失败或断开时保留失败状态，完整文件仅在正常结束后发布。
 fn publish(
     out: &Path,
     write: impl FnOnce(&mut File) -> Result<serde_json::Value, Error>,
@@ -439,7 +439,9 @@ fn record(input: impl BufRead, out: &Path) -> Result<serde_json::Value, Error> {
 }
 
 fn run(cli: Cli) -> Result<(), Error> {
-    // Sandbox entry points must not touch user settings or update state before exec.
+    #[cfg(windows)]
+    qscope_qqnt::windows::isolate_standard_handles()?;
+    // 沙盒入口在执行目标前保持用户设置及更新状态独立。
     if let Command::Collector { arguments } = cli.command {
         #[cfg(windows)]
         return print_json(&qscope_qqnt::worker::dispatch(arguments)?);
@@ -461,7 +463,7 @@ fn run(cli: Cli) -> Result<(), Error> {
             &std::env::current_exe()?,
         ))?;
     }
-    // Executables an earlier update moved aside go once nothing runs them.
+    // 确认旧可执行文件已退出后，清除上次更新移开的副本。
     if let Ok((_, directory)) = qscope_automation::update::locate() {
         qscope_automation::runtime::cleanup_replaced(&directory);
     }
@@ -482,7 +484,7 @@ fn run(cli: Cli) -> Result<(), Error> {
             #[cfg(not(target_os = "macos"))]
             let identity = qscope_qqnt::package::identity()?;
             print_json(
-                &serde_json::json!({"schema_version":1,"version":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"data_directory":data,"cli":std::env::current_exe()?,"backend":service.map(|service|serde_json::json!({"pid":service.pid,"endpoint":service.endpoint,"version":service.version})),"embedded_webui":resources.as_ref().is_some_and(|resources|resources.contains("ui/index.html")),"embedded_devtools":resources.as_ref().is_some_and(|resources|resources.contains("collectors/devtools/node_modules/chii/public/target.js")),"embedded_probe":resources.as_ref().is_some_and(|resources|resources.contains(qscope_automation::runtime::probe_resource())),"qq_build":qscope_automation::runtime::capture_supported().then_some(identity.build),"offline_analysis_supported":true,"qq_discovery_targets":["macos-arm64"],"live_capture_supported":qscope_automation::runtime::capture_supported(),"http_capture_complete":false,"hot_attach_supported":false}),
+                &serde_json::json!({"schema_version":1,"version":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"data_directory":data,"cli":std::env::current_exe()?,"backend":service.map(|service|serde_json::json!({"pid":service.pid,"endpoint":service.endpoint,"version":service.version})),"embedded_webui":resources.as_ref().is_some_and(|resources|resources.contains("ui/index.html")),"embedded_devtools":resources.as_ref().is_some_and(|resources|resources.contains("collectors/devtools/node_modules/chii/public/target.js")),"embedded_probe":resources.as_ref().is_some_and(|resources|resources.contains(qscope_automation::runtime::probe_resource())),"qq_build":qscope_automation::runtime::capture_supported().then_some(identity.build),"offline_analysis_supported":true,"qq_discovery_targets":["windows-x64","macos-arm64"],"live_capture_supported":qscope_automation::runtime::capture_supported(),"http_capture_complete":false,"hot_attach_supported":false}),
             )?;
         }
         Command::Qq(options) => qq::run(options)?,

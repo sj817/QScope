@@ -10,7 +10,7 @@ use std::{
 
 #[derive(Args)]
 pub struct Options {
-    /// Override the global command directory.
+    /// 覆盖全局命令目录。
     #[arg(long, global = true)]
     directory: Option<PathBuf>,
     #[command(subcommand)]
@@ -19,13 +19,13 @@ pub struct Options {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Register qs for this installation in the global command directory.
+    /// 为当前安装注册全局 qs 命令。
     Install,
-    /// Show where qs points and whether this installation owns it.
+    /// 显示 qs 指向及当前安装是否拥有该命令。
     Status,
-    /// Remove the global qs command.
+    /// 移除全局 qs 命令。
     Uninstall {
-        /// Remove qs only when it was registered by this installation.
+        /// 仅在 qs 由当前安装注册时移除。
         #[arg(long)]
         if_owned: bool,
     },
@@ -129,7 +129,7 @@ fn update_path(directory: &Path, install: bool) -> Result<(), Error> {
 
 #[cfg(not(windows))]
 fn update_path(_directory: &Path, _install: bool) -> Result<(), Error> {
-    // Shell startup files belong to the user. Report when PATH needs an explicit adjustment.
+    // 需要调整 PATH 时报告具体操作，shell 启动文件由用户维护。
     Ok(())
 }
 
@@ -181,7 +181,7 @@ pub fn run(options: Options) -> Result<(), Error> {
                 Path::new(target) == source
             }
         });
-    // Replacing the registered source in place also updates its hard links.
+    // 原地替换已注册源文件会同时更新硬链接。
     let owned = hash.as_ref().is_some_and(|hash| {
         previous
             .as_ref()
@@ -229,7 +229,7 @@ pub fn run(options: Options) -> Result<(), Error> {
             .as_ref()
             .is_some_and(|value| value["path_added"] == true)
             || !registered(&directory)?);
-    // Persist intent first. A retry can recognize both sides of an interrupted update.
+    // 先持久化操作意图，重试时可识别中断更新的前后状态。
     let mut value = json!({"schema_version":1,"owner":"qscope-global-command","target":source,"sha256":hash.as_ref().unwrap_or(&desired),"pending_sha256":desired,"path_added":path_added,"version":env!("CARGO_PKG_VERSION")});
     save(&ownership, &value)?;
     if hash.as_ref() != Some(&desired) {

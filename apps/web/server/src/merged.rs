@@ -1,6 +1,4 @@
-//! Account view: launches of one observed account concatenated in start order.
-//! Every row keeps its original (session_id, event_id); nothing is copied,
-//! renumbered or interleaved, and each launch stays a separate raw file.
+//! 账号视图按启动顺序拼接同一观察账号的会话。每行保留原始 session_id 和 event_id，每次启动仍对应独立原始文件。
 use crate::{
     capture::ListQuery,
     catalog::{Library, SharedCapture},
@@ -13,8 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-// Earlier launches must be fully indexed before rows are concatenated, or a
-// cursor in a later launch would skip rows indexed afterwards.
+// 拼接前需完成前序会话索引，避免后续游标跳过稍后才索引到的行。
 const INDEX_BUDGET: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Default, Deserialize)]
@@ -100,7 +97,7 @@ pub fn page(
             .map_err(|_| crate::lock_error())?
             .select(query, after, before, limit, newest)
     };
-    // Validates the filter even when no rows are returned.
+    // 空结果同样需要校验筛选条件。
     select(count - 1, None, None, 1, true)?;
     let end = || -> Result<String, ApiError> {
         let last = members[count - 1]
@@ -132,7 +129,7 @@ pub fn page(
     let mut events = vec![];
     let (mut has_earlier, mut has_more) = (false, false);
     if let Some(text) = &cursor.after_cursor {
-        // After pages walk forward; they never report has_earlier.
+        // 向后分页始终向前遍历，has_earlier 固定为 false。
         let (start, after) = position(text, &members)?;
         for index in start..count {
             let after = (index == start).then_some(after);

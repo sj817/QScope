@@ -1,4 +1,4 @@
-//! Read-only producer identity checks. A capture file is not a running process.
+//! 只读验证生产者身份，抓包文件与运行进程分别建模。
 use crate::contract::Session;
 use std::path::Path;
 
@@ -81,7 +81,7 @@ impl Probe {
         }
     }
 
-    /// A producer QScope has just seen exit, such as a research copy it closed.
+    /// 记录 QScope 刚观察到退出的生产者，例如由界面关闭的研究副本。
     pub fn exited(&mut self, id: &str, birth: &str) {
         #[cfg(any(windows, target_os = "macos"))]
         self.entries.insert(
@@ -145,7 +145,7 @@ impl Probe {
                     .stderr(Stdio::null())
                     .kill_on_drop(true);
                 #[cfg(windows)]
-                command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+                command.creation_flags(0x0800_0000); // 使用 CREATE_NO_WINDOW 隐藏窗口
                 let mut child = command.spawn().ok()?;
                 let mut stdin = child.stdin.take()?;
                 stdin
@@ -180,7 +180,7 @@ impl Probe {
                     );
                 }
             }
-            // The library itself is limited to 512 sessions.
+            // 库的会话数量上限为 512。
             if self.entries.len() > 512 {
                 self.entries
                     .retain(|id, _| sessions.iter().any(|s| &s.id == id));

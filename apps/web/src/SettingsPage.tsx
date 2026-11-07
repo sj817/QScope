@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type {
   DevtoolsFrontend,
@@ -45,8 +45,7 @@ const skillStates: Record<string, string> = {
   conflict: "内容有改动",
 };
 
-// The chosen install scope and project directory stay on this machine, so the AI section reopens
-// on the target the user picked instead of a default that hides installed skills.
+// 本机保存安装范围及项目目录，重新打开 AI 接入时恢复用户选择的目标。
 const TARGET_KEY = "qscope.skill-target";
 function savedTarget(): { scope: SkillScope; project: string } {
   const fallback: SkillScope = (
@@ -62,7 +61,7 @@ function savedTarget(): { scope: SkillScope; project: string } {
         project: typeof saved.project === "string" ? saved.project : "",
       };
   } catch {
-    /* storage unavailable: use the default target */
+    /* 存储不可用时使用默认目标 */
   }
   return { scope: fallback, project: "" };
 }
@@ -70,11 +69,11 @@ function saveTarget(scope: SkillScope, project: string) {
   try {
     localStorage.setItem(TARGET_KEY, JSON.stringify({ scope, project }));
   } catch {
-    /* the choice is simply not remembered */
+    /* 本次选择仅保留在内存 */
   }
 }
 
-// The open section follows the address, so a reload or shared link lands on the same section.
+// 当前设置区域与地址同步，刷新或分享链接时恢复相同区域。
 type Section = "qq" | "ai" | "update";
 const sections: Section[] = ["qq", "ai", "update"];
 function sectionFromUrl(): Section {
@@ -114,13 +113,13 @@ export function SettingsPage({
   const startedHere = useRef(false);
   const tabs = useRef(new Map<Section, HTMLButtonElement>());
 
-  // `directory` is the project to show; in user scope it is only remembered for switching back.
-  async function load(
+  // directory 表示显示的项目，用户范围下保存此值供切回项目时恢复。
+  const load = useCallback(async function load(
     nextScope: SkillScope,
     directory?: string,
     remembered = false,
   ) {
-    // A choice is kept at once, even if the window closes before the check returns.
+    // 立即保存选择，检查完成前关闭窗口也能恢复。
     if (!remembered) saveTarget(nextScope, directory || "");
     controller.current?.abort();
     const next = new AbortController();
@@ -142,7 +141,7 @@ export function SettingsPage({
       saveTarget(nextScope, projectDirectory);
     } catch (error) {
       if (abortError(error)) return;
-      // A remembered project that has since moved falls back to the default target.
+      // 已记住的项目移动后回退到默认目标。
       if (remembered && nextScope === "project" && directory) {
         void load("project");
         return;
@@ -151,12 +150,12 @@ export function SettingsPage({
     } finally {
       if (!next.signal.aborted) setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void load(initial.scope, initial.project, true);
     return () => controller.current?.abort();
-  }, []);
+  }, [initial, load]);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -585,7 +584,9 @@ export function SettingsPage({
                 <h3 id="agent-settings-title">AI 接入</h3>
                 <p>
                   安装 QScope 技能后，AI 可以通过 CLI 读取抓包和控制界面。Claude
-                  Code 会同时写入命令白名单。
+                  Code
+                  会同时写入命令白名单。每次检查会核对技能版本、模板和已安装内容的
+                  SHA256。
                 </p>
               </div>
             </header>
@@ -687,8 +688,19 @@ export function SettingsPage({
                       role="listitem"
                       key={target.agent}
                     >
-                      <div className="agent-text" title={target.path}>
+                      <div
+                        className="agent-text"
+                        title={`${target.path}\n当前模板 SHA256 ${target.template_sha256}\n已安装内容 SHA256 ${target.installed_content_sha256 || "未安装"}`}
+                      >
                         <strong>{target.name}</strong>
+                        <span>
+                          {target.installed_version
+                            ? `v${target.installed_version}`
+                            : "未记录版本"}
+                          {target.installed_version !== target.version
+                            ? ` → v${target.version}`
+                            : " · 哈希已校验"}
+                        </span>
                         <span
                           className={
                             target.state === "conflict"

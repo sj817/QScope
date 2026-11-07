@@ -1,5 +1,4 @@
-//! Append-only native probe transport. A missing footer or partial tail is
-//! reported explicitly; complete records remain available after a target crash.
+//! 追加式原生探针传输，显式报告缺失结束标记和截断尾部，目标崩溃后仍保留完整记录。
 use crate::data::{U64, to_hex};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -68,7 +67,7 @@ pub struct Reader<R> {
     last_dropped: u64,
 }
 
-/// An opaque, validated record boundary for random access on the same input.
+/// 在同一输入上随机访问使用的已验证不透明记录边界。
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct Checkpoint {
     offset: u64,
@@ -157,7 +156,7 @@ impl<R: Read> Reader<R> {
 
     pub fn next_event(&mut self) -> Result<Option<Event>, Error> {
         let mut bytes = [0; RECORD_BYTES];
-        // EOF between records is distinct from a record interrupted by a crash.
+        // 区分记录之间的正常 EOF 与崩溃造成的记录中断。
         loop {
             match self.input.read(&mut bytes[..1]) {
                 Ok(0) => return Ok(None),
@@ -249,7 +248,7 @@ impl<R: Read> Reader<R> {
 }
 
 impl<R: Read + Seek> Reader<R> {
-    /// Resume a derived index after its input prefix hash has been verified.
+    /// 输入前缀哈希验证后恢复派生索引。
     pub fn resume_index(&mut self, checkpoint: Checkpoint) -> Result<(), Error> {
         let length = self
             .input
@@ -277,7 +276,7 @@ impl<R: Read + Seek> Reader<R> {
         }
     }
 
-    /// Read a previously indexed record without changing the append cursor.
+    /// 读取已有索引记录，保留追加游标。
     pub fn event_at(&mut self, checkpoint: Checkpoint) -> Result<Option<Event>, Error> {
         let saved = self.checkpoint();
         self.restore(checkpoint)?;
@@ -297,7 +296,7 @@ impl<R: Read + Seek> Reader<R> {
         Ok(())
     }
 
-    /// A live writer may not have finished its latest record yet.
+    /// 活跃写入者可能仍在写入最新记录。
     pub fn retry_partial_tail(&mut self) -> Result<(), Error> {
         self.input
             .seek(SeekFrom::Start(self.offset))
@@ -306,9 +305,7 @@ impl<R: Read + Seek> Reader<R> {
     }
 }
 
-/// Status text the probe writes when the account value it reads from the MSF
-/// send task changes. The value stays a string; its meaning is a hypothesis
-/// bound to the collector profile until validated against a real login.
+/// MSF 发送任务中的账号值变化时写入状态文本，值始终保存为字符串，语义在真实登录验证前保留为采集布局假设。
 pub const ACCOUNT_STATUS: &str = "account_observed";
 pub const MAX_ACCOUNT: usize = 32;
 
@@ -319,7 +316,7 @@ pub struct AccountObservation {
 }
 
 impl AccountObservation {
-    /// Parse `account_observed type=<u32> uin=<1..=32 of [0-9A-Za-z_-]>`.
+    /// 解析 account_observed type=<u32> uin=<1..=32 of [0-9A-Za-z_-]>。
     pub fn parse(text: &str) -> Option<Self> {
         let mut parts = text.split(' ');
         if parts.next()? != ACCOUNT_STATUS {

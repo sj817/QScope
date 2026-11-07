@@ -16,10 +16,10 @@ pub struct Entry {
     pub sha256: String,
 }
 
-/// The native collector files written to the data directory, compared with the bundle.
+/// 将写入数据目录的原生采集器文件与内嵌资源比较。
 #[derive(Debug, Default)]
 pub struct NativeCheck {
-    /// Whether the files were written at least once.
+    /// 文件是否至少写入过一次。
     pub written: bool,
     pub missing: Vec<String>,
     pub changed: Vec<String>,
@@ -262,7 +262,7 @@ impl Resources {
         Ok(check)
     }
 
-    /// Writes the native files again from the bundle, replacing any that changed.
+    /// 从内嵌资源重新写入原生文件，替换已发生变化的副本。
     pub fn repair_native(&self, data: &Path) -> Result<(), Error> {
         let check = self.check_native(data)?;
         let root = self.root(data);

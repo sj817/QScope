@@ -1,0 +1,37 @@
+import { defineConfig } from "@playwright/test";
+import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+
+process.env.QSCOPE_E2E_DIR ||= resolve(
+  import.meta.dirname,
+  "../.tmp/webui-e2e",
+  randomUUID(),
+);
+const webkit = process.env.QSCOPE_BROWSER
+  ? process.env.QSCOPE_BROWSER === "webkit"
+  : process.platform === "darwin";
+
+export default defineConfig({
+  testDir: "./web",
+  testMatch: "**/*.spec.ts",
+  fullyParallel: false,
+  workers: 1,
+  timeout: 30_000,
+  use: {
+    baseURL: "http://127.0.0.1:19841",
+    browserName: webkit ? "webkit" : "chromium",
+    channel: webkit
+      ? undefined
+      : process.env.QSCOPE_BROWSER_CHANNEL ||
+        (process.platform === "win32" ? "msedge" : undefined),
+    viewport: { width: 1600, height: 1000 },
+    trace: "retain-on-failure",
+  },
+  webServer: {
+    command: "node web/start-server.mjs",
+    cwd: import.meta.dirname,
+    url: "http://127.0.0.1:19841",
+    reuseExistingServer: process.env.QSCOPE_REUSE_SERVER === "1",
+    timeout: 120_000,
+  },
+});

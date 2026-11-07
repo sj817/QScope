@@ -12,8 +12,7 @@ inline constexpr std::size_t command_limit = 512;
 inline constexpr std::size_t payload_limit = 1024 * 1024;
 inline constexpr std::uint64_t original_limit = 64 * 1024 * 1024;
 
-// This is a bounded snapshot for the inspected ARM64 module, not a QQ protocol schema.
-// The owner/layout offsets require a matching module identity before installing probes.
+// 这是已检查 ARM64 模块的有界布局快照，启用探针前必须验证匹配的模块身份。
 struct Decoded {
     std::uint64_t sequence;
     std::uint64_t original_size;
@@ -61,9 +60,7 @@ bool read_field(Read& read, std::uint64_t object, std::uint64_t offset,
     return true;
 }
 
-// Darwin ARM64 libc++ alternate string layout: short bytes start at +0, short length
-// is byte +23; its high bit selects the long {data +0, size +8, capacity/flag +16} form.
-// Target evidence: command comparison at module RVA 0x42e70 and imported string ctors.
+// Darwin ARM64 libc++ 备用字符串布局使用 +0 的短字节及 +23 的短长度，高位选择长布局，其数据、长度、容量及标志位分别在 +0、+8、+16。依据为模块 RVA 0x42e70 的命令比较与导入构造函数。
 template <class Read>
 bool read_command(Read& read, std::uint64_t address, Decoded& output,
                   std::uint8_t (&header)[24], std::uint32_t& length) noexcept {
@@ -90,12 +87,9 @@ bool read_command(Read& read, std::uint64_t address, Decoded& output,
            read_bytes(read, data + size, &terminator, 1) && terminator == 0;
 }
 
-}  // namespace detail
+}  // 命名空间 detail
 
-// direction: 1 inbound, 2 outbound. x1 is a pointer to a single-pointer owner slot,
-// not a shared_ptr control block. Reader performs checked copying, e.g. with
-// mach_vm_read_overwrite, and returns true only when every requested byte was read.
-// The caller supplies Decoded in a queue slot; never place this 1 MiB object on a hook stack.
+// 方向 1 为接收、2 为发送。x1 指向单指针所有者槽，读取器通过受检复制确认完整读取。调用方在队列槽提供 Decoded，避免在钩子栈分配 1 MiB 对象。
 template <class Read>
 bool decode(std::uint8_t direction, std::uint64_t owner_x1, Read read,
             Decoded& output) noexcept {
@@ -150,8 +144,7 @@ bool decode(std::uint8_t direction, std::uint64_t owner_x1, Read read,
         original < payload_limit ? original : payload_limit);
     if (!detail::read_bytes(read, begin, output.payload, captured)) return false;
 
-    // Reject observable owner/container changes during copying. This is not an atomic
-    // snapshot guarantee: callers still rely on the instrumented entry's object lifetime.
+    // 复制期间拒绝可观察的所有者或容器变化，对象生命周期仍由被插桩入口保证。
     std::uint64_t current_object = 0;
     std::uint64_t current_message = 0;
     std::uint64_t current_vector = 0;
@@ -175,4 +168,4 @@ bool decode(std::uint8_t direction, std::uint64_t owner_x1, Read read,
     return true;
 }
 
-}  // namespace qscope::macos
+}  // 命名空间 qscope::macos

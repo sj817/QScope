@@ -1,4 +1,4 @@
-# Research inputs, captures, experiments, and generated output are local.
+# 研究输入、抓包、实验及生成产物保留在本机。
 /.tmp/
 /artifacts/
 /build/
@@ -17,24 +17,23 @@
 /collectors/qqnt-windows/host/obj/
 /.cache/
 
-# Local AI tool configuration, records and installed skills stay on this machine.
+# 本机 AI 工具配置、记录及已安装技能保留在本机。
 /.codex/
 /.claude/
 /.agents/
 /.cursor/
 
-# Local design-hook cache and suppressions from the impeccable plugin.
+# impeccable 插件的本机设计缓存及忽略记录。
 /.impeccable/
 
-# Local credentials; examples must contain synthetic values.
+# 本机凭据保持私密，示例仅使用合成值。
 .env
 .env.*
 !.env.example
 
-# OS metadata.
+# 系统元数据。
 Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Do not globally ignore *.bin, *.json, *.log, or *.png:
-# reviewed minimal fixtures and source assets must remain visible to Git.
+# 按目录区分产物，保留经审核的最小样本及源码资源在 Git 中可见。

@@ -1,16 +1,39 @@
 {
-  "name": "qscope-workspace-tools",
+  "name": "qscope",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.15.9",
-  "engines": {
-    "node": ">=24.22.1 <25"
-  },
   "scripts": {
-    "lint": "eslint .",
+    "build": "node scripts/build-desktop.ts",
+    "build:cli": "node scripts/build-desktop.ts --cli-only",
+    "build:backend": "cargo build -p qscope-web -p qscope-cli --locked",
+    "build:icons": "node scripts/build-icons.ts",
+    "build:native": "node scripts/build-collector.ts",
+    "build:webui": "pnpm --filter qscope-web build",
+    "check": "pnpm check:repo && pnpm lint && pnpm format:check && pnpm typecheck && pnpm check:rust && pnpm check:contract",
+    "check:contract": "cargo run -p qscope-web --locked -- types --check",
+    "check:repo": "node scripts/check-repo.ts",
+    "check:rust": "cargo fmt --all -- --check && cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "dev": "node scripts/webui.ts",
+    "dev:frontend": "pnpm --filter qscope-web dev",
+    "dev:webui": "node scripts/webui.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -p tsconfig.json"
+    "generate:contract": "cargo run -p qscope-web --locked -- types",
+    "lint": "eslint . --max-warnings 0",
+    "release": "node scripts/release-workflow.ts",
+    "release:sign": "node scripts/release-sign.ts",
+    "screenshots": "pnpm --filter @qscope/tests screenshots",
+    "test": "pnpm test:scripts && pnpm test:rust",
+    "test:desktop": "node tests/desktop/smoke.ts",
+    "test:installer": "node tests/desktop/installer.ts",
+    "test:native": "node tests/native/run.ts",
+    "test:packaged": "node tests/cli/run.ts",
+    "test:rust": "cargo test --workspace --locked",
+    "test:scripts": "pnpm --filter @qscope/tests test",
+    "test:update": "node tests/update/macos.ts",
+    "test:webui": "pnpm build:backend && pnpm build:webui && pnpm --filter @qscope/tests test:webui",
+    "typecheck": "tsc -p tsconfig.json && pnpm -r --if-present typecheck"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -21,5 +44,10 @@
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=24.22.1 <25",
+    "pnpm": "9.15.9"
   }
 }

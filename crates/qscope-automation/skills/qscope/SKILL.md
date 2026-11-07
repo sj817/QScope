@@ -1,5 +1,7 @@
 ---
 name: qscope
+metadata:
+  version: "{{SKILL_VERSION}}"
 description: 使用 QScope CLI 启动隔离研究 QQ、录制真实收发包、筛选和解码 PB/TLV/JCE、对比原始包，并通过研究副本的 DevTools 桥查看及操作 QQ 界面。任何金融相关任务直接拒绝。
 ---
 

@@ -11,7 +11,7 @@ export function choiceKey(item: PacketChoice) {
   return `${item.sessionId}:${item.event.event_id}`;
 }
 
-// A select-only combobox styled like the rest of the workbench.
+// 仅供选择的组合框，与工作台其他控件保持一致。
 function Picker<T extends string | number>({
   label,
   value,
@@ -33,7 +33,6 @@ function Picker<T extends string | number>({
   );
   useEffect(() => {
     if (!open) return;
-    setActive(current);
     const outside = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -49,6 +48,7 @@ function Picker<T extends string | number>({
     if (!open) {
       if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
         event.preventDefault();
+        setActive(current);
         setOpen(true);
       }
       return;
@@ -82,9 +82,9 @@ function Picker<T extends string | number>({
         aria-controls={open ? id : undefined}
         aria-activedescendant={open ? `${id}-${active}` : undefined}
         onClick={(event) => {
-          // WebKit on macOS does not focus buttons on a pointer click. The combobox
-          // owns keyboard navigation, so opening it must move focus here explicitly.
+          // macOS WebKit 点击按钮时可能不聚焦，组合框负责键盘导航，打开时需显式移动焦点。
           event.currentTarget.focus();
+          if (!open) setActive(current);
           setOpen((value) => !value);
         }}
         onKeyDown={onKeyDown}
@@ -294,28 +294,35 @@ export function ComparePopup({
   const [different, setDifferent] = useState(true);
   const [data, setData] = useState<Comparison | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => {
-    const controller = new AbortController();
+  const body = JSON.stringify({
+    items: items.map((item) => ({
+      session_id: item.sessionId,
+      event_id: item.event.event_id,
+    })),
+    format,
+  });
+  const [previousBody, setPreviousBody] = useState(body);
+  if (previousBody !== body) {
+    setPreviousBody(body);
     setData(null);
     setError("");
+  }
+  useEffect(() => {
+    const controller = new AbortController();
     void request<Comparison>("/compare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items: items.map((item) => ({
-          session_id: item.sessionId,
-          event_id: item.event.event_id,
-        })),
-        format,
-      }),
+      body,
       signal: controller.signal,
     })
-      .then(setData)
+      .then((result) => {
+        if (!controller.signal.aborted) setData(result);
+      })
       .catch((error) => {
         if (!abortError(error)) setError(message(error));
       });
     return () => controller.abort();
-  }, [items, format]);
+  }, [body]);
   return (
     <Modal title={`多包对比 · ${items.length} 个包`} wide onClose={onClose}>
       <div className="comparison-toolbar">

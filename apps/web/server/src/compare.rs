@@ -1,7 +1,7 @@
 use crate::{catalog::Library, contract::*, decode};
 use std::collections::{BTreeMap, HashMap};
 
-// Preserve field identity and repeated occurrences, independent of byte offsets or field order.
+// 保留字段身份和重复项，对齐依据独立于字节偏移及字段顺序。
 fn flatten(nodes: &[FieldNode], prefix: &str, hex: &str, out: &mut Vec<(String, String, String)>) {
     let mut occurrences = HashMap::<&str, usize>::new();
     for node in nodes {

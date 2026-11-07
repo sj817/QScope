@@ -6,8 +6,7 @@ use tauri::{
 pub const QUIT_ID: &str = "qscope-quit";
 
 pub fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    // The predefined Quit item calls NSApplication terminate: directly. A regular menu item
-    // lets the desktop finish page-owned tasks and release its backend connection first.
+    // 预定义退出项直接调用 NSApplication 的 terminate，普通菜单项允许先完成页面任务并释放后台连接。
     Menu::with_items(
         app,
         &[

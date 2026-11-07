@@ -52,7 +52,7 @@ const orders: Record<Order, (a: Suggestion, b: Suggestion) => number> = {
 const join = (values: string[]) =>
   values.length ? values.join(",") : undefined;
 
-// Picks commands seen in the capture, or takes a typed rule with * and ?.
+// 选择抓包中出现的命令，或输入包含 * 和 ? 的规则。
 export function CommandFilter({
   sources,
   rules,
@@ -82,17 +82,27 @@ export function CommandFilter({
     exclude = patterns(rules.exclude);
   const active = include.length + exclude.length;
   const sourceKey = sources.join(",");
+  const [previousRequest, setPreviousRequest] = useState({ open, sourceKey });
+  if (
+    previousRequest.open !== open ||
+    previousRequest.sourceKey !== sourceKey
+  ) {
+    setPreviousRequest({ open, sourceKey });
+    if (open) setError("");
+  }
 
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    setError("");
     Promise.all(
-      sources.map((id) =>
-        request<CommandList>(`/sessions/${id}/commands`, {
-          signal: controller.signal,
-        }),
-      ),
+      sourceKey
+        .split(",")
+        .filter(Boolean)
+        .map((id) =>
+          request<CommandList>(`/sessions/${id}/commands`, {
+            signal: controller.signal,
+          }),
+        ),
     )
       .then((lists) => {
         if (!controller.signal.aborted) setList(merge(lists));

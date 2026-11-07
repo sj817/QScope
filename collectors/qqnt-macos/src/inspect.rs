@@ -1,4 +1,4 @@
-//! Read-only inspection of the selected app. It never grants permissions or alters signatures.
+//! 只读检查所选应用的身份和签名。
 use qscope_automation::Error;
 use serde::Serialize;
 use std::path::Path;
@@ -222,8 +222,7 @@ pub fn inspect(app: &Path) -> Result<Inspection, Error> {
     })
 }
 
-/// codesign's decoded dictionary view also works for DER-only entitlements. Unknown formats
-/// stay unknown, rather than treating an XML decoding failure as absence of entitlements.
+/// codesign 解码字典可处理 DER 权限声明，未知格式保留 unknown 状态。
 #[cfg(any(target_os = "macos", test))]
 fn runtime_flag(output: &str) -> Option<bool> {
     let line = output

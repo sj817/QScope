@@ -11,6 +11,7 @@ export default defineConfig([
     "**/dist/",
     "**/test-results/",
     "**/playwright-report/",
+    ".cache/",
     ".tmp/",
     "artifacts/",
     "build/",
@@ -20,19 +21,24 @@ export default defineConfig([
   {
     files: ["**/*.{js,mjs,cjs,ts,tsx}"],
     extends: [js.configs.recommended, tseslint.configs.recommended],
+  },
+  {
+    files: [
+      "scripts/**/*.{js,mjs,cjs,ts}",
+      "tests/**/*.{js,mjs,cjs,ts}",
+      "collectors/**/*.{js,cjs}",
+      "apps/web/vite.config.ts",
+      "eslint.config.js",
+    ],
     languageOptions: { globals: globals.node },
   },
   {
     files: ["apps/web/src/**/*.{ts,tsx}"],
     extends: [reactHooks.configs.flat.recommended],
     languageOptions: { globals: globals.browser },
-    rules: {
-      // Existing effects reset local state when their inputs change; warn until each is reworked.
-      "react-hooks/set-state-in-effect": "warn",
-    },
   },
   {
-    // Runs inside the QQ main process, where both Node and browser globals exist.
+    // 运行于 QQ 主进程，同时具备 Node 与浏览器全局对象。
     files: ["collectors/qqnt-windows/automation.js"],
     languageOptions: {
       sourceType: "script",

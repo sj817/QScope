@@ -379,6 +379,22 @@ fn run(spec: &Specification, self_test: bool) -> Result<Value, Error> {
     )?);
     let mut session = None;
     let result: Result<(), Error> = (|| {
+        let targets = if capture.is_some() {
+            let wrapper = identity
+                .modules
+                .iter()
+                .find(|module| module.path.ends_with("/wrapper.node"))
+                .ok_or_else(|| failure("客户端清单缺少 wrapper.node"))?;
+            crate::pe::verified_targets(
+                &executable
+                    .parent()
+                    .ok_or_else(|| failure("QQ 路径无父目录"))?
+                    .join(&wrapper.path),
+            )?
+        } else {
+            [0, 0]
+        };
+        report["dynamic_targets"] = json!({"scanner_version":"pe-msf-v1", "send_rva":format!("0x{:x}", targets[0]), "recv_rva":format!("0x{:x}", targets[1])});
         let registry = format!("Software\\QScope\\PortableSessions\\{run_id}");
         let child = windows::Session::start(windows::ResearchOptions {
             executable: &executable,
@@ -392,6 +408,7 @@ fn run(spec: &Specification, self_test: bool) -> Result<Value, Error> {
             self_test,
             diagnostics: spec.startup_diagnostics,
             paused: !self_test && spec.wait_for_debugger,
+            targets,
         })?;
         let pid = child.pid();
         let (birth, _) = windows::identity(pid)?;

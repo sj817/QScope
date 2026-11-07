@@ -1,5 +1,4 @@
-//! Bounded ARM64 Mach-O discovery using string references and LC_FUNCTION_STARTS.
-//! The output is evidence for analysis, never an executable hook profile.
+//! 通过字符串引用与 LC_FUNCTION_STARTS 执行有界 ARM64 Mach-O 扫描，输出保留为分析候选。
 use crate::Scan;
 use qscope_automation::Error;
 use serde::Serialize;
@@ -184,7 +183,7 @@ fn sign21(value: u32) -> i64 {
     ((value as i64) << 43) >> 43
 }
 
-/// Only exact ADR or adjacent ADRP/ADD references are recognized. No register-state guessing.
+/// 仅识别精确 ADR 或相邻 ADRP/ADD 引用。
 fn referenced_address(instruction: u32, next: Option<u32>, pc: u64) -> Option<u64> {
     if instruction & 31 == 31 {
         return None;
@@ -515,7 +514,7 @@ mod tests {
         let mut missing = sample();
         missing[0x408..0x410].fill(0);
         assert_eq!(scan(&missing).unwrap().candidates[0].status, "missing");
-        // The same send anchors in another function are ambiguous, never a first-match win.
+        // 相同发送锚点落入多个函数时保留歧义状态。
         let original = sample();
         let mut ambiguous = original.clone();
         ambiguous[0x420..0x430].copy_from_slice(&original[0x400..0x410]);

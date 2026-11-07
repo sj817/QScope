@@ -1,4 +1,4 @@
-//! A macOS update replaces the complete bundle, preserving its signed bytes and links.
+//! macOS 更新整体替换应用包，保留签名字节及符号链接。
 use super::{Install, MAX_PACKAGE, semver};
 use crate::{Error, runtime};
 use serde_json::Value;
@@ -224,11 +224,14 @@ pub(super) fn unpack(package: &Path, install: Install) -> Result<Vec<(String, Pa
     } else {
         "-macos-arm64-cli-webui.zip"
     };
-    let version = filename
-        .strip_prefix("QScope-")
-        .and_then(|name| name.strip_suffix(suffix))
-        .ok_or_else(|| invalid("更新包的平台或架构不符"))?;
-    semver(version)?;
+    if filename != format!("QScope{suffix}") {
+        // 兼容已有发布归档，版本一致性由签名清单校验。
+        let version = filename
+            .strip_prefix("QScope-")
+            .and_then(|name| name.strip_suffix(suffix))
+            .ok_or_else(|| invalid("更新包的平台或架构不符"))?;
+        semver(version)?;
+    }
     let mut archive =
         zip::ZipArchive::new(File::open(package)?).map_err(|error| invalid(error.to_string()))?;
     if archive.len() > 20000 {
@@ -450,7 +453,7 @@ pub(super) fn replace_app(target: &Path, source: &Path) -> Result<(), Error> {
     let version = app_version(source, None)?;
     let parent = target.parent().ok_or_else(|| invalid("应用缺少父目录"))?;
     runtime::no_links(parent)?;
-    // Copy beside the installed app before moving it, so the final rename stays on one volume.
+    // 先复制到已安装应用旁，保证最终重命名位于同一卷。
     let stage = tempfile::Builder::new()
         .prefix(".qscope-update-")
         .tempdir_in(parent)
@@ -472,7 +475,7 @@ pub(super) fn replace_app(target: &Path, source: &Path) -> Result<(), Error> {
         runtime::instance_id()?
     ));
     publish(target, &fresh, &backup, &version)?;
-    // The old CLI/UI may still map these files. Keep the complete backup instead of unlinking them.
+    // 旧 CLI 或界面仍可能映射文件，因此保留完整备份。
     Ok(())
 }
 
@@ -536,7 +539,7 @@ mod tests {
             ("__MACOSX/QScope.app/link", Some("../QScope.app"), None),
         ] {
             let root = root();
-            let package = root.path().join("QScope-0.2.0-macos-arm64.zip");
+            let package = root.path().join("QScope-macos-arm64.zip");
             let mut writer = zip::ZipWriter::new(File::create(&package).unwrap());
             let options = SimpleFileOptions::default().unix_permissions(0o755);
             if let Some(target) = link {
@@ -574,7 +577,7 @@ mod tests {
     #[test]
     fn wrong_architecture_is_rejected_before_executing_a_downloaded_cli() {
         let root = root();
-        let package = root.path().join("QScope-0.2.0-macos-arm64-cli-webui.zip");
+        let package = root.path().join("QScope-macos-arm64-cli-webui.zip");
         let mut bytes = [0u8; 32];
         bytes[..4].copy_from_slice(&0xfeedfacfu32.to_le_bytes());
         bytes[4..8].copy_from_slice(&0x01000007u32.to_le_bytes());
@@ -594,6 +597,14 @@ mod tests {
                 .message
                 .contains("Apple Silicon")
         );
+        let legacy = root.path().join("QScope-0.2.0-macos-arm64-cli-webui.zip");
+        fs::copy(&package, &legacy).unwrap();
+        assert!(
+            unpack(&legacy, Install::Cli)
+                .unwrap_err()
+                .message
+                .contains("Apple Silicon")
+        );
     }
 
     #[test]
@@ -609,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires signed Mac build artifacts; run node tools/test-update-macos.ts"]
+    #[ignore = "requires signed Mac build artifacts; run node tests/update/macos.ts"]
     fn packaged_app_and_cli_preserve_signatures_modes_and_rollback_backup() {
         let root = root();
         let source =

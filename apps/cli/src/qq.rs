@@ -15,38 +15,38 @@ pub struct Options {
 }
 #[derive(Subcommand)]
 enum Command {
-    /// Locate ARM64 MSF candidates in a local Mac QQ module without starting or modifying QQ.
+    /// 只读扫描 Windows PE x64 或 macOS ARM64 模块的 MSF 候选。
     Scan {
-        /// Inspect this Mach-O module instead of QQ.app/Contents/Resources/app/wrapper.node.
+        /// 显式指定 PE x64 或 Mach-O ARM64 模块。
         #[arg(long, conflicts_with = "app")]
         module: Option<PathBuf>,
-        /// Read-only source app bundle; defaults to /Applications/QQ.app.
+        /// 只读源应用包，默认为 /Applications/QQ.app。
         #[arg(long)]
         app: Option<PathBuf>,
     },
-    /// Inspect Mac QQ signing, entitlements and ARM64 capture candidates without launching it.
+    /// 只读检查 Mac QQ 签名、权限声明和 ARM64 抓包候选。
     Inspect {
         #[arg(long, default_value = "/Applications/QQ.app")]
         app: PathBuf,
     },
-    /// Download, verify and unpack the official QQ package without starting it.
+    /// 下载、校验并解包官方 QQ 安装包。
     Prepare {
-        /// Use an already downloaded official installer instead of downloading it.
+        /// 使用已经下载的官方安装包。
         #[arg(long)]
         installer: Option<PathBuf>,
     },
-    /// Start the isolated research QQ with capture and its control bridge; the user logs in.
+    /// 启动隔离研究 QQ、抓包和控制桥，由用户手动登录。
     Start {
-        /// Separate QQ data directory; each profile keeps its own login.
+        /// 独立 QQ 数据目录，各配置分别保存登录状态。
         #[arg(long, default_value = "automation")]
         profile: String,
-        /// Control bridge port; 19860 for the automation profile, otherwise a free port.
+        /// 控制桥端口，automation 配置默认使用 19860，其他配置使用空闲端口。
         #[arg(long)]
         port: Option<u16>,
     },
-    /// Report preparation progress, the running PID and its capture session.
+    /// 报告准备进度、运行 PID 和抓包会话。
     Status,
-    /// Close the research QQ of a profile. Its capture is finished with an end marker.
+    /// 关闭指定配置的研究 QQ，并写入抓包结束标记。
     Stop {
         #[arg(long, default_value = "automation")]
         profile: String,
@@ -65,7 +65,15 @@ pub fn run(options: Options) -> Result<(), Error> {
                 .unwrap_or_else(|| PathBuf::from("/Applications/QQ.app"))
                 .join("Contents/Resources/app/wrapper.node")
         });
-        return crate::print_json(&serde_json::to_value(qscope_qqnt_macos::scan(&path)?)?);
+        let mut file = std::fs::File::open(&path)?;
+        let mut magic = [0; 2];
+        std::io::Read::read_exact(&mut file, &mut magic)?;
+        let report = if magic == *b"MZ" {
+            serde_json::to_value(qscope_qqnt::pe::scan(&path)?)?
+        } else {
+            serde_json::to_value(qscope_qqnt_macos::scan(&path)?)?
+        };
+        return crate::print_json(&report);
     }
     if !runtime::capture_supported() && !matches!(options.command, Command::Status) {
         return Err(Error::new(

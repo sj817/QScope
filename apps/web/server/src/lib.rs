@@ -144,7 +144,7 @@ async fn record_stop(
         .lock()
         .map_err(|_| lock_error())?
         .stop(&id)?;
-    // Wait for the small worker to flush; the existing QQ collector continues running.
+    // 等待小型工作线程完成落盘，QQ 采集器独立运行。
     for _ in 0..100 {
         let jobs = state.recordings.lock().map_err(|_| lock_error())?.list();
         if jobs.iter().any(|r| r.id == id && r.state != "recording") {
@@ -184,7 +184,7 @@ async fn refresh_workspace(state: AppState) {
         if let Ok(mut catalog) =
             blocking(move || Ok(library.lock().map_err(|_| lock_error())?.snapshot())).await
         {
-            // A slow OS query must never hold the cache lock used by HTTP reads.
+            // 耗时系统查询在 HTTP 读取使用的缓存锁外执行。
             let mut probe = state.processes.lock().await.clone();
             probe.annotate(&mut catalog.sessions, &state.imports).await;
             *state.processes.lock().await = probe;

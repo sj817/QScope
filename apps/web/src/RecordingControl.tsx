@@ -49,7 +49,7 @@ export function RecordingControl({
         if (!controller.signal.aborted) accept(result);
       } catch (error) {
         if (!abortError(error)) {
-          /* The catalogue reports connection failures. Pending saves survive reconnection. */
+          /* 连接错误由目录报告，待保存任务跨重连保留。 */
         }
       }
       if (!controller.signal.aborted) timer = setTimeout(poll, 750);
@@ -87,7 +87,7 @@ export function RecordingControl({
       setBusy(false);
     }
   }
-  // Only a running QQ can be recorded; otherwise the control is not offered.
+  // 录制入口仅在 QQ 运行时显示。
   if (!active && (!session || !isLive(session))) return null;
   return (
     <button

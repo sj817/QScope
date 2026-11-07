@@ -10,10 +10,10 @@ use std::{
 
 #[derive(Args, Default)]
 pub struct BackendOptions {
-    /// Additional read-only capture files or directories.
+    /// 附加只读抓包文件或目录。
     #[arg(long)]
     pub captures: Vec<PathBuf>,
-    /// Default 19840 with automatic fallback. An explicit port is used strictly.
+    /// 默认端口 19840，可自动回退，显式指定端口时严格使用该值。
     #[arg(long)]
     pub port: Option<u16>,
     #[arg(long, hide = true)]
@@ -56,7 +56,7 @@ impl BackendOptions {
 pub struct Options {
     #[command(flatten)]
     pub backend: BackendOptions,
-    /// Start without opening the default browser.
+    /// 启动后由用户自行打开浏览器。
     #[arg(long)]
     pub no_open: bool,
 }
@@ -69,13 +69,13 @@ pub struct Service {
 
 #[derive(Subcommand)]
 enum ServiceCommand {
-    /// Keep the backend running until it is explicitly stopped.
+    /// 保持后台运行，直到显式停止。
     Start(BackendOptions),
-    /// Report whether the backend runs, its endpoint and its active clients.
+    /// 报告后台运行状态、服务地址和活跃客户端。
     Status,
-    /// Stop an idle backend. Active QQ and recordings must be stopped first.
+    /// 停止空闲后台，需先关闭活跃 QQ 和录制。
     Stop {
-        /// Save running recordings and close every research QQ first, as an update does.
+        /// 先保存运行中的录制并关闭全部研究 QQ，与更新流程一致。
         #[arg(long)]
         close_tasks: bool,
     },

@@ -51,7 +51,7 @@ fn check_cancelled(cancelled: &AtomicBool) -> Result<(), Error> {
     Ok(())
 }
 
-// Every temporary host process is reaped on errors, cancellation and timeouts.
+// 错误、取消及超时时回收每个临时宿主进程。
 struct HostProcess(Child);
 
 impl Drop for HostProcess {
@@ -104,7 +104,7 @@ fn read_json(path: &Path) -> Result<Value, Error> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-// Only a ready bridge transfers ownership to the independent native host.
+// 控制桥就绪后，所有权才转交独立原生宿主。
 struct PendingLaunch<'a> {
     host: &'a Path,
     directory: PathBuf,
@@ -138,7 +138,7 @@ impl Drop for PendingLaunch<'_> {
     }
 }
 
-/// Start an isolated QQ copy using the same native interface from every entry point.
+/// 所有入口共用原生接口启动隔离 QQ 副本。
 pub fn launch(
     specification: &Specification,
     wait: u64,
@@ -292,8 +292,7 @@ pub fn launch(
     }
 }
 
-/// Close a running research copy through its owner. The owner ends the capture with its footer,
-/// stops QQ and writes `exit.json`; only the owner whose receipt names the live process is asked.
+/// 通过所有者关闭运行中的研究副本，写入抓包结束标记、停止 QQ 并生成 exit.json，接收者需匹配当前进程回执。
 pub fn stop(log_directory: &Path, connection_file: &Path, profile: &str) -> Result<Value, Error> {
     validate_profile(profile, 1024)?;
     let connection = devtools::Connection::connect_file(connection_file)?;

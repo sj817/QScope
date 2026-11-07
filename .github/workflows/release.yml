@@ -1,7 +1,6 @@
-name: Release
+name: release
 
-# Platform builds never receive the release private key. One final job signs
-# both manifests and publishes all assets together; manual runs retain an artifact.
+# 平台构建仅产出分发包，聚合任务独占在线更新签名密钥。
 on:
   push:
     tags: ["v*"]
@@ -10,63 +9,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows-x64
-          - os: macos-15
-            platform: macos-arm64
-    env:
-      CARGO_BUILD_JOBS: "2"
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24.22.1
-          package-manager-cache: false
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.97.0 --profile minimal
-      - name: Install pinned pnpm
-        run: npm install --global pnpm@9.15.9
-      - name: Check the tag against the workspace version
-        run: node tools/release-workflow.ts version
-      - name: Verify Apple Silicon runner
-        if: runner.os == 'macOS'
-        run: node --input-type=module -e "import assert from 'node:assert/strict'; assert.equal(process.platform, 'darwin'); assert.equal(process.arch, 'arm64');"
-      - name: Build and test synthetic Mac native capture
-        if: runner.os == 'macOS'
-        run: |
-          node tools/build-native-macos.ts
-          node tools/test-native-macos.ts
-      - name: Build desktop, CLI and installer
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # Without Apple credentials this verifies ad-hoc signatures, not notarization.
-          APPLE_SIGNING_IDENTITY: "-"
-        run: node tools/build-desktop.ts
-      - name: Verify extracted Mac app, DMG and standalone CLI with synthetic captures
-        if: runner.os == 'macOS'
-        run: node apps/cli/tests/packaged-macos.ts
-      - name: Verify real signed Mac update archives and rollback backup
-        if: runner.os == 'macOS'
-        run: node tools/test-update-macos.ts
-      - name: Collect verified platform assets
-        run: node tools/release-workflow.ts collect --platform ${{ matrix.platform }} --out build/release-assets
-      - uses: actions/upload-artifact@v7
-        with:
-          name: qscope-release-${{ matrix.platform }}
-          path: build/release-assets
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 7
+    uses: ./.github/workflows/package.yml
 
   release:
     needs: build
@@ -75,39 +24,43 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - name: 检出源码
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - name: 准备签名环境
+        uses: ./.github/actions/setup
         with:
-          node-version: 24.22.1
-          package-manager-cache: false
-      - name: Check release version
+          rust: "false"
+      - name: 校验发布版本
         id: metadata
-        run: node tools/release-workflow.ts version
-      - uses: actions/download-artifact@v7
+        run: pnpm release version
+      - name: 下载两端分发包
+        uses: actions/download-artifact@v7
         with:
           pattern: qscope-release-*
           path: build/release-input
-      - name: Verify and combine both platform artifacts
-        run: node tools/release-workflow.ts assemble --input build/release-input --out build/release-assets
-      - name: Sign platform update manifests
+      - name: 校验并聚合平台资产
+        run: pnpm release assemble --input build/release-input --out build/release-assets
+      - name: 签名在线更新清单
         env:
           QSCOPE_RELEASE_SIGNING_KEY: ${{ secrets.QSCOPE_RELEASE_SIGNING_KEY }}
-        run: node tools/release-sign.ts sign --dir build/release-assets --version ${{ steps.metadata.outputs.version }} --platform all
-      - name: Hash every published package and signed manifest
-        run: node tools/release-workflow.ts checksums --dir build/release-assets
-      - name: Keep the complete signed build of a manual run
-        if: github.ref_type != 'tag'
+        run: pnpm release:sign sign --dir build/release-assets --version ${{ steps.metadata.outputs.version }} --platform all
+      - name: 生成完整校验清单
+        run: pnpm release checksums --dir build/release-assets
+      - name: 保存手动构建结果
         uses: actions/upload-artifact@v7
+        if: github.ref_type != 'tag'
         with:
           name: qscope-release
           path: build/release-assets
           if-no-files-found: error
-          overwrite: true
           retention-days: 7
-      - name: Publish all assets in one GitHub release
+      - name: 发布 GitHub 版本
+        uses: softprops/action-gh-release@v3
         if: github.ref_type == 'tag'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node tools/release-workflow.ts publish --dir build/release-assets
+        with:
+          name: QScope ${{ steps.metadata.outputs.version }}
+          files: build/release-assets/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

@@ -1,38 +1,38 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "QScope",
-  "mainBinaryName": "QScope",
-  "version": "0.1.1",
-  "identifier": "io.github.sj817.qscope",
+  "app": {
+    "security": {
+      "capabilities": []
+    },
+    "windows": []
+  },
   "build": {
     "frontendDist": "http://127.0.0.1:19840"
   },
-  "app": {
-    "windows": [],
-    "security": {
-      "capabilities": []
-    }
-  },
   "bundle": {
-    "publisher": "sj817",
     "active": true,
-    "targets": [],
-    "icon": ["icons/icon.ico", "icons/32x32.png", "icons/128x128.png"],
     "fileAssociations": [
       {
-        "ext": ["qscap"],
-        "name": "QScope Capture",
         "description": "QScope 原始协议抓包",
-        "mimeType": "application/x-qscope-capture",
         "exportedType": {
-          "identifier": "io.github.sj817.qscope.capture",
-          "conformsTo": ["public.data"]
+          "conformsTo": ["public.data"],
+          "identifier": "io.github.sj817.qscope.capture"
         },
-        "role": "Viewer",
-        "rank": "Alternate"
+        "ext": ["qscap"],
+        "mimeType": "application/x-qscope-capture",
+        "name": "QScope Capture",
+        "rank": "Alternate",
+        "role": "Viewer"
       }
     ],
+    "icon": ["icons/icon.ico", "icons/32x32.png", "icons/128x128.png"],
     "macOS": { "minimumSystemVersion": "11.0" },
+    "publisher": "sj817",
+    "targets": [],
     "windows": { "webviewInstallMode": { "type": "skip" } }
-  }
+  },
+  "identifier": "io.github.sj817.qscope",
+  "mainBinaryName": "QScope",
+  "productName": "QScope",
+  "version": "0.1.1"
 }

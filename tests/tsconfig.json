@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "lib": ["ES2024", "DOM"]
+  },
+  "extends": "../tsconfig.json",
+  "include": ["**/*.ts"]
+}

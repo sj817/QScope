@@ -12,11 +12,11 @@ use std::{
 pub const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_INDEX: usize = 250_000;
 const INDEX_BATCH: usize = 2048;
-// Bounded look-ahead for the account of a file that has not been indexed yet.
+// 对尚未建立索引的文件执行有界账号前瞻扫描。
 const ACCOUNT_SCAN_RECORDS: usize = 20_000;
 const ACCOUNT_SCAN_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_ACCOUNTS: usize = 8;
-// Command suggestions list the most frequent names only.
+// 命令建议仅列出出现次数最多的名称。
 const MAX_COMMANDS: usize = 2_000;
 
 #[derive(Serialize, Deserialize)]
@@ -181,7 +181,7 @@ impl Capture {
             std::mem::take(&mut self.summary.accounts),
         );
         self.summary = snapshot.summary;
-        // Older snapshots have no account fields; the restored status metadata does.
+        // 旧快照缺少账号字段，可从恢复的状态元数据补充。
         self.summary.account = None;
         self.summary.accounts.clear();
         for entry in &self.entries {
@@ -327,8 +327,7 @@ impl Capture {
         self.save_index();
     }
 
-    /// Account of a file whose index has not reached its status records yet.
-    /// Returns whether a bounded scan ran.
+    /// 索引尚未读到状态记录时，通过有界扫描查询账号，并返回是否执行扫描。
     pub fn scan_account(&mut self) -> bool {
         if self.account_scanned {
             return false;
@@ -355,7 +354,7 @@ impl Capture {
         true
     }
 
-    /// Distinct packet commands in the current index, most frequent first.
+    /// 列出当前索引中不同包命令，按频次降序排列。
     pub fn commands(&mut self) -> CommandList {
         self.refresh();
         let mut counts: HashMap<&str, [u64; 3]> = HashMap::new();
@@ -396,8 +395,7 @@ impl Capture {
         self.entries.last().map_or(0, |e| e.id)
     }
 
-    /// Matching rows strictly after/before an event ID from the current index.
-    /// Returns the rows and whether more matches lie beyond `limit`.
+    /// 从当前索引读取严格位于事件 ID 前后的匹配行，返回结果及是否超出 limit。
     pub fn select(
         &self,
         query: &ListQuery,

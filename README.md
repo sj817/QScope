@@ -59,12 +59,12 @@
 
 | 发布文件 | 说明与用途 |
 | :--- | :--- |
-| `QScope-<版本>-windows-x64-setup.exe` | **推荐（安装版）**：桌面端 + CLI，安装时可勾选注册全局 `qs` 命令 |
-| `QScope-<版本>-windows-x64-portable.zip` | **便携版**：解压即用，双击运行 `QScope.exe`，数据保存在同级目录 |
-| `QScope-<版本>-windows-x64-cli-webui.zip` | **轻量版**：单文件 `qscope-cli.exe`，集成命令行与 WebUI，适合无头/自动化环境 |
-| `QScope-<版本>-macos-arm64.dmg` | **Mac 安装版**：双击后把 `QScope.app` 拖到「应用程序」 |
-| `QScope-<版本>-macos-arm64.zip` | 完整 Mac 应用包，也是 App 在线更新使用的归档 |
-| `QScope-<版本>-macos-arm64-cli-webui.zip` | Mac 独立 CLI，内嵌 WebUI 与采集组件 |
+| `QScope-windows-x64-setup.exe` | **推荐（安装版）**：桌面端 + CLI，安装时可勾选注册全局 `qs` 命令 |
+| `QScope-windows-x64.zip` | **便携版**：解压即用，双击运行 `QScope.exe`，数据保存在同级目录 |
+| `QScope-windows-x64-cli-webui.zip` | **轻量版**：单文件 `qscope-cli.exe`，集成命令行与 WebUI，适合无头/自动化环境 |
+| `QScope-macos-arm64.dmg` | **Mac 安装版**：双击后把 `QScope.app` 拖到「应用程序」 |
+| `QScope-macos-arm64.zip` | 完整 Mac 应用包，也是 App 在线更新使用的归档 |
+| `QScope-macos-arm64-cli-webui.zip` | Mac 独立 CLI，内嵌 WebUI 与采集组件 |
 | `SHA256SUMS.txt` | 文件完整性 SHA256 校验清单 |
 | `qscope-update.json` / `.sig` | 在线更新清单及 Ed25519 签名文件 |
 | `qscope-update-macos-arm64.json` / `.sig` | Mac 专用在线更新清单及 Ed25519 签名文件 |
@@ -77,7 +77,7 @@
 
 当前源码可构建 macOS 12 及以上的 Apple Silicon 版 `QScope.app`、DMG 和独立 CLI。Mac 入口支持下载固定版本 QQ 7.0.3（54395），校验官方包后准备独立研究副本，启动双向 MSF 采集与 Chii 页面调试；同时支持 `.qscap`、PB/TLV/JCE 离线分析和本地 WebUI。原生探针、扫码登录前后流量、Chii 的 DOM/样式/控制台及隔离文件目录已在本机研究副本验证。Intel Mac 暂无打包适配。现有 `v0.1.1` Release 仍只有 Windows 资产；Mac 更新服务需要下一次发布包含 Mac 安装包和独立签名清单的版本。
 
-在 Mac 上运行 `node tools/build-desktop.ts` 后，安装文件位于 `dist/QScope-<版本>-macos-arm64-<构建标识>/`。双击 DMG，把窗口里的 `QScope.app` 拖到「应用程序」，再从「应用程序」打开；不需要手动解压。也提供 `.app` 和 ZIP。应用使用系统 WKWebView，运行时不需要 Node、开发工具或 WebView2。默认使用 ad-hoc 签名，未做 Apple 公证，下载到其他机器的首次打开可能受到 Gatekeeper 限制；可用 `APPLE_SIGNING_IDENTITY` 指定自己的签名身份，公证需要另行配置。
+在 Mac 上运行 `pnpm build` 后，安装文件位于 `dist/QScope-<版本>-macos-arm64-<构建标识>/`。双击 DMG，把窗口里的 `QScope.app` 拖到「应用程序」，再从「应用程序」打开；不需要手动解压。也提供 `.app` 和 ZIP。应用使用系统 WKWebView，运行时不需要 Node、开发工具或 WebView2。默认使用 ad-hoc 签名，未做 Apple 公证，下载到其他机器的首次打开可能受到 Gatekeeper 限制；可用 `APPLE_SIGNING_IDENTITY` 指定自己的签名身份，公证需要另行配置。
 
 在「设置 → QQ 抓包」点击「下载并启动 QQ」，首次下载约 465 MiB。QQ 官方 DMG 只读挂载并解包，不执行系统安装；每个 profile 使用独立的研究 `.app`、HOME 和文件目录。默认接收文件目录是该 profile 下的 `files/`，无需全盘访问权限。启动前会校验系统文件写入限制和子进程继承；不满足隔离条件时拒绝启动。仅固定模块身份的已验证采集布局可以启用，其他版本只提供只读扫描。
 
@@ -91,6 +91,8 @@ Mac 应用与独立 CLI 均支持在线更新。更新器读取 Mac 专用签名
 ```
 
 `qq scan` 读取 Mach-O 的 ARM64 切片，通过函数名、日志字符串的独立代码引用及函数边界寻找候选，不按 QQ 版本硬编码 RVA。结果记录模块和切片 SHA256、相对地址、缺失或歧义状态；`hook_ready` 仍为 `false`，调用约定、包体布局和真实采集需独立验证。编译方式或日志字符串变化仍可能使扫描失效，不能据此承诺自动适配所有版本。
+
+Windows 同样支持 `qs qq scan --module <wrapper.node>`，可在任意开发平台只读检查 PE x64 模块。扫描结合函数名、日志字符串的 RIP 相对引用及 PE 异常表定位函数边界，分别记录候选、缺失和歧义。Windows 采集器在启动前重新定位入口，并核验模块 SHA256 和已验证函数前缀，随后将本次地址传入探针。
 
 `qq inspect` 额外报告版本、签名验证、Hardened Runtime、App Sandbox、动态库加载与调试 entitlement。扫描与检查均不启动 QQ、不修改签名、不申请权限；系统工具无法解释的结果保留为 `unknown` 或 `unverified`。
 
@@ -183,7 +185,7 @@ Mac 默认使用 `~/Library/Application Support/QScope/`；通过 `open /path/QS
   </tr>
 </table>
 
-> 截图为真实界面，测试数据由 `apps/web/tests/showcase.mjs` 合成生成，不包含任何真实协议内容。
+> 截图为真实界面，测试数据由 `tests/web/showcase.mjs` 合成生成，不包含任何真实协议内容。
 
 ---
 
@@ -238,6 +240,7 @@ flowchart TD
 - **自动化分析**：AI 可直接调用 `qs` CLI 进行会话查询、协议解码、对比和录制，无需人工导出。
 - **界面观察与控制**：通过受限的本地 Loopback 控制桥，AI 可以获取 QQ 界面文本快照、模拟点击/按键以及捕获屏幕（通过 PID 与进程启动时间双重校验，防止误操作其他窗口）。
 - **流量去噪**：支持 `--hide-heartbeat` 过滤心跳，以及 `--baseline` 过滤动作前已存在的背景命令，方便定位操作触发的新包。
+- 技能自带独立版本号，设置页及 `qs agent status` 会核对模板和已安装内容的 SHA256。升级后显示可更新，保留对旧安装的识别与手工修改的冲突检查。
 - **金融禁令**：内置 Skill 强制硬编码拦截任何涉及红包、支付、转账等金融相关操作。
 
 ---
@@ -260,37 +263,72 @@ flowchart TD
 
 ## 开发
 
-需要 Rust `1.97.0`（由 `rust-toolchain.toml` 固定）、Node `24.22.1` 与 pnpm `9.15.9`。Windows x64 打包另需 MSVC x64 和 Windows SDK；Mac 打包需要 Apple Silicon Mac 和 Xcode Command Line Tools。依赖版本由各 lockfile 固定。
+使用 Node `24.22.1`、pnpm `9.15.9` 和 Rust `1.97.0`。Rust 由 `rust-toolchain.toml` 固定，pnpm 由根 `packageManager` 固定。可以通过 Corepack 安装项目指定的 pnpm，也可以执行 `npm install --global pnpm@9.15.9`。Windows 采集器需要 MSVC x64 和 Windows SDK，Mac 采集器需要 Apple Silicon Mac 与 Xcode Command Line Tools。
+
+### 从新克隆开始
+
+在仓库根目录执行一次安装，再启动开发服务。
 
 ```bash
-pnpm install --frozen-lockfile                                         # 根目录：ESLint、Prettier、tools 类型
-pnpm --dir apps/web install --frozen-lockfile                          # WebUI
-pnpm --dir collectors/devtools install --frozen-lockfile --ignore-scripts  # Chii 页面调试资源
-node tools/webui.ts            # 构建并启动开发 WebUI；--fresh 查看首次启动流程
-node tools/build-desktop.ts    # 构建本机平台桌面端、CLI 与安装包；--no-bundle 省略安装器/DMG
+pnpm install
+pnpm dev
 ```
 
-提交代码前的检查命令：
+本地开发直接使用 `pnpm install`，修改依赖时同步更新根锁文件。CI 显式使用 `pnpm install --frozen-lockfile` 校验依赖声明与锁文件的一致性。
+
+`pnpm dev` 自动构建本机采集器、WebUI 和 Rust 后台，开发页面位于 `http://127.0.0.1:19840/`，数据保存到 `.tmp/dev/`。`pnpm dev --fresh` 使用独立空目录预览首次启动，`pnpm dev --fresh --reset` 清除该预览的数据后重建。需要前端热更新时，在另一终端运行 `pnpm dev:frontend`，打开 Vite 输出的本机地址，API 转发到开发后台。
+
+首次原生构建自动下载公开依赖并校验固定 SHA256，缓存位于 `.cache/dependencies/`。Windows 的 MinHook 直接使用固定提交的公开源码文件，Mac 的 CMake、Dobby 与 Windows 安装器组件使用已登记版本的公开归档。新克隆可重新生成所有构建输入，`artifacts/` 用于本机研究证据。普通构建的入口为 `pnpm build`。
+
+### 目录约定
+
+| 目录 | 内容 |
+| --- | --- |
+| `apps/` | CLI、桌面壳、WebUI 和本地会话服务 |
+| `crates/` | 共享 Rust 解码、存储及自动化逻辑 |
+| `collectors/` | 平台采集器源码、客户端身份和公开原生依赖声明 |
+| `scripts/` | TypeScript 构建、开发、契约及发布编排 |
+| `tests/` | CLI 集成测试、浏览器测试、原生测试及验收脚本 |
+| `.cache/` | 可重建的公共工具链依赖缓存，Git 忽略 |
+| `build/`、`target/`、`dist/` | 可重建产物，Git 忽略 |
+| `.tmp/` | 开发数据和临时验证文件，Git 忽略 |
+
+Node 工程属于同一个 pnpm 工作区，共用根锁文件。测试工程显式声明 Playwright、TypeScript 和 Node 类型依赖，根 ESLint 和类型检查覆盖维护脚本、测试及 WebUI 配置。Rust 内联单元测试留在所属模块，外部测试统一归到 `tests/`。
+
+### 常用命令
+
+| 命令 | 用途 |
+| --- | --- |
+| `pnpm dev` | 构建并启动本机开发 WebUI |
+| `pnpm dev:frontend` | 连接开发后台的 Vite 热更新 |
+| `pnpm build` | 本机 Windows 或 Mac 的桌面、CLI 及安装包 |
+| `pnpm build --no-bundle` | 桌面及 CLI，省略安装器或 DMG |
+| `pnpm build:cli` | 内嵌 WebUI 的独立 CLI 归档，支持 Windows、Mac 和 Linux |
+| `pnpm build:webui` | 仅构建 WebUI |
+| `pnpm build:native` | 构建本机采集器，按平台选择实现 |
+| `pnpm generate:contract` | 从 Rust 响应类型重新生成前端契约 |
+| `pnpm check` | 布局、ESLint、格式、类型、Rust 规范和契约检查 |
+| `pnpm test` | 脚本及 Rust 工作区测试 |
+| `pnpm test:webui` | 构建后台、WebUI 并运行浏览器合成验收 |
+| `pnpm test:native` | 验证已构建采集器的合成数据 |
+| `pnpm test:packaged` | 验证本机已构建分发包 |
+| `pnpm test:packaged --cli-only` | 验证 `pnpm build:cli` 的独立归档、执行权限与内嵌资源 |
+| `pnpm test:update` | 验证 Mac 更新归档、签名、权限及回滚备份 |
+| `pnpm screenshots` | 用合成抓包生成 README 截图 |
+
+Windows 浏览器测试默认使用 Edge，Mac 默认使用 WebKit，Linux 默认使用 Chromium。首次准备 Mac 或 Linux 浏览器时执行对应命令。
 
 ```bash
-node tools/check-repo.ts
-pnpm run lint && pnpm run format:check && pnpm run typecheck
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
-cargo run -p qscope-web --locked -- types --check
-pnpm --dir apps/web run build
-cargo build -p qscope-web -p qscope-cli --locked && pnpm --dir apps/web test
+pnpm --filter @qscope/tests exec playwright install webkit
+pnpm --filter @qscope/tests exec playwright install --with-deps chromium
 ```
 
-浏览器测试和截图只使用合成数据。Windows 测试使用 Edge，Mac 测试使用 WebKit；Mac 首次运行测试前用 `pnpm --dir apps/web exec playwright install webkit` 安装 lockfile 对应的浏览器。`QSCOPE_BROWSER` 可显式选择 `webkit` 或 `chromium`。
+`QSCOPE_BROWSER` 可选择 `webkit` 或 `chromium`，`QSCOPE_BROWSER_CHANNEL` 可指定浏览器通道。浏览器与打包验收使用合成数据，真实 QQ 登录、数据隔离及多端安装分别验收。
 
-Mac 打包完成后可运行 `node apps/cli/tests/packaged-macos.ts`，验证 DMG 内的应用和「应用程序」拖拽入口、ZIP 解压后的签名和执行权限，以及中文路径、空 PATH 下的独立 CLI、嵌入资源和合成抓包后台。此检查不启动 QQ，不能替代真实采集验收。
+Mac 的 `collectors/qqnt-macos/bootstrap.cjs` 在原入口前初始化隔离目录，复用认证控制桥，同一个 CLI 原生 worker 维护采集身份。已有 profile 中保存的不可访问下载目录，需要在 QQ「设置 → 存储管理」改为该 profile 的 `files/`。
 
-`node tools/test-update-macos.ts` 使用刚打包的 App 与 CLI ZIP，在独立临时目录验证安全解包、签名、符号链接、执行权限、整体替换与原版备份。`node --test tools/release-sign.test.ts` 验证 Windows 清单兼容、Mac 清单隔离、签名和跨平台资产聚合。这两项均已接入 CI。
+### CI 与发布
 
-Mac ARM64 原生探针的开发检查为 `node tools/build-native-macos.ts` 和 `node tools/test-native-macos.ts`。前者校验固定版本的 CMake、Dobby 源包并构建有界内存读取与 `.qscap` 写入组件；后者使用合成模块验证插桩、非法指针、截断、结束标记和原函数行为，均不启动 QQ。真实采集仍需单独验证客户端身份、研究副本权限及数据隔离，不能仅凭扫描候选自动启用探针。
+仓库检查覆盖 Windows、macOS 和 Linux。公共准备步骤复用本机工作区配置，使用 pnpm 与 Rust 的现成 Actions 管理工具链和缓存。平台打包流程供主分支检查及发布共用。CI 标题使用小写英文，步骤名称和说明使用中文。
 
-Mac 研究副本的 `collectors/qqnt-macos/bootstrap.cjs` 在 QQ 原入口前初始化隔离目录（文件下载默认为 profile 下的 `files/`），并复用现有认证控制桥；由同一个 `qscope-cli` 的原生 worker 提供隔离环境和采集身份。`node --test collectors/qqnt-macos/bootstrap_test.cjs` 使用模拟 Electron API 检查路径、进程身份和入口加载顺序，不启动 QQ。已有 profile 中显式保存的不可访问目录仍需在 QQ「设置 → 存储管理」中改为该 profile 的 `files/`。
-
-发版时先确认 Cargo、Tauri 与各 `package.json` 的版本号一致，再推送 `v<版本>` tag：`.github/workflows/release.yml` 分别构建 Windows x64 和 Mac ARM64，校验并聚合所有安装包后，仅在独立签名步骤向进程提供 `QSCOPE_RELEASE_SIGNING_KEY`，签署两个平台的更新清单并一次发布完整 Release。Windows 既有 `qscope-update.json` 契约保持不变。手动运行该 workflow 只构建、签名并上传 artifact，不发布；Mac 默认使用 ad-hoc 签名，不代表 Apple 公证。
+发版前统一 Cargo、Tauri 和产品 `package.json` 的版本号，推送 `v<版本>` 标签触发发布。Windows 与 Mac 在独立作业构建并验收，聚合作业校验全部分发包后独占 `QSCOPE_RELEASE_SIGNING_KEY`，签署两个平台的更新清单，再由 `softprops/action-gh-release` 发布完整 Release。手动运行发布流程保存签名产物供下载，Mac 的 Apple 签名及公证另由对应凭据配置。

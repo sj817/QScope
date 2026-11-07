@@ -22,7 +22,7 @@ pub struct Manager {
     error: Option<String>,
     task: Option<tokio::task::JoinHandle<()>>,
     stopping: bool,
-    // QQ started from a QScope page leaves with the desktop; the CLI and AI keep their own.
+    // 桌面退出时关闭页面启动的研究 QQ，CLI 与 AI 分别拥有各自实例。
     page_task: bool,
     page_owned: Option<(u32, String)>,
     released: bool,
@@ -53,8 +53,7 @@ fn read_progress(path: &Path) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-// The probe comes from the build's native directory (a development build) or the embedded
-// resources (a release), which are written to the data directory on launch.
+// 开发构建从原生构建目录读取探针，发布构建从内嵌资源提取探针至数据目录。
 fn local_probe(state: &AppState) -> Option<PathBuf> {
     let deployed = state.runtime.resources.join(runtime::probe_resource());
     if deployed.is_file() {
@@ -359,11 +358,7 @@ fn probe(state: &AppState) -> RuntimeComponent {
                 "probe",
                 LABEL,
                 "missing",
-                if cfg!(target_os = "macos") {
-                    "开发构建还没有编译采集器，运行 node tools/build-native-macos.ts 后重新检查"
-                } else {
-                    "开发构建还没有编译采集器，运行 node tools/build-native.ts 后重新检查"
-                },
+                "开发构建还没有编译采集器，运行 pnpm build:native 后重新检查",
                 "build",
             ),
         };
@@ -517,8 +512,7 @@ const SECURITY_HINT: &str = if cfg!(target_os = "macos") {
     "写入后又被移除，通常是安全软件拦截了采集探针。请在 Windows 安全中心的「保护历史记录」中还原，并把 QScope 数据目录加入排除项后再修复。"
 };
 
-/// Fixes what can be fixed in place: rewrites the collector files from the bundle, and removes
-/// damaged QQ files so the official installer is checked and unpacked again.
+/// 原地修复包括重写内嵌采集器文件、移除损坏的 QQ 派生文件，并重新校验和解包官方安装包。
 pub async fn repair(State(state): State<AppState>) -> Result<Json<RuntimeHealth>, ApiError> {
     if control::active_tasks(state.clone()).await? {
         return Err(ApiError::new(
@@ -543,7 +537,7 @@ pub async fn repair(State(state): State<AppState>) -> Result<Json<RuntimeHealth>
         let mut probe_error = None;
         if fix_probe && let Some(assets) = &task.assets {
             probe_error = assets.repair_native(&task.runtime.storage).err();
-            // Security software usually removes the file shortly after it is written.
+            // 安全软件可能在文件写入后立即移除它。
             std::thread::sleep(std::time::Duration::from_millis(1500));
         }
         if fix_package {
@@ -656,7 +650,7 @@ async fn prepare(state: &AppState, request: SetupRequest) -> Result<(), ApiError
             .map_err(|_| lock_error())?
             .page_owned = Some((pid, birth.into()));
     }
-    // The page that asked for this copy closed while it was starting.
+    // 请求启动研究副本的页面在准备期间关闭。
     if released(state)? {
         let connection = state
             .runtime
@@ -678,7 +672,7 @@ async fn prepare(state: &AppState, request: SetupRequest) -> Result<(), ApiError
     Ok(())
 }
 
-// The connection file sits at profiles/<profile>/.qscope/devtools.json.
+// 连接文件位于 profiles/<profile>/.qscope/devtools.json。
 pub(crate) fn profile_of(connection: &Path) -> Result<String, ApiError> {
     connection
         .parent()
@@ -693,8 +687,7 @@ fn released(state: &AppState) -> Result<bool, ApiError> {
     Ok(state.onboarding.lock().map_err(|_| lock_error())?.released)
 }
 
-// Closes one research copy through its owner and records the exit, so the status shown next
-// does not wait for the producer check to notice.
+// 通过所属启动器关闭研究副本并记录退出，及时刷新状态。
 pub(crate) async fn close(
     state: &AppState,
     connection: PathBuf,
@@ -725,12 +718,12 @@ pub(crate) async fn close(
 
 #[derive(Default, serde::Deserialize)]
 pub struct StopRequest {
-    /// Only a copy started from a QScope page; QQ started by the CLI or an AI keeps running.
+    /// 仅关闭 QScope 页面启动的副本，CLI 或 AI 启动的 QQ 独立管理。
     #[serde(default)]
     page_only: bool,
 }
 
-/// Closes the research QQ shown in the settings. A startup still in progress is not launched.
+/// 关闭设置页显示的研究 QQ，同时取消尚在进行的启动。
 pub async fn stop(
     State(state): State<AppState>,
     request: Option<Json<StopRequest>>,

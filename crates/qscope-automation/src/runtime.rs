@@ -67,10 +67,10 @@ pub fn unix_now() -> u64 {
         .map_or(0, |time| time.as_secs())
 }
 
-/// Written under the data directory when an update stops the backend and the desktop should close.
+/// 更新停止后台并请求桌面退出时，将标记写入数据目录。
 pub const RESTART_MARKER: &str = "updates/restart.json";
 
-/// Whether an update asked the desktop to close within the last few minutes.
+/// 检查最近几分钟内是否有更新请求桌面退出。
 pub fn restart_requested(data: &Path) -> bool {
     read_settings(&data.join(RESTART_MARKER))
         .ok()
@@ -78,7 +78,7 @@ pub fn restart_requested(data: &Path) -> bool {
         .is_some_and(|time| unix_now().saturating_sub(time) < 5 * 60)
 }
 
-/// Removes executables an update moved aside, once nothing runs them any more.
+/// 确认旧文件已退出后，移除更新移开的可执行文件。
 pub fn cleanup_replaced(directory: &Path) {
     for name in ["QScope.exe.old", "qscope-cli.exe.old", "qs.exe.old"] {
         let path = directory.join(name);
@@ -119,7 +119,7 @@ fn desktop_lock(path: &Path) -> Result<File, Error> {
         .open(path)?)
 }
 
-/// The Mac updater waits for every desktop using this data directory before relaunching.
+/// Mac 更新器等待使用该数据目录的全部桌面退出后再重启。
 pub fn desktop_lease(path: &Path) -> Result<File, Error> {
     let file = desktop_lock(path)?;
     file.try_lock_shared()
@@ -260,7 +260,7 @@ pub const fn probe_filename(development: bool) -> &'static str {
     }
 }
 
-/// Portable state stays outside a signed .app bundle.
+/// 便携数据保存在已签名 .app 外部。
 pub fn portable_data(executable: &Path) -> PathBuf {
     #[cfg(target_os = "macos")]
     if let Some(macos) = executable.parent()

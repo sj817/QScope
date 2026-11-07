@@ -10,7 +10,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Serve the built WebUI and read explicitly configured local capture roots.
+    /// 提供已构建 WebUI，并读取显式配置的本机抓包根目录。
     Serve {
         #[arg(long, required = true)]
         captures: Vec<PathBuf>,
@@ -20,14 +20,14 @@ enum Command {
         ui_dir: PathBuf,
         #[arg(long, default_value_t = 19840)]
         port: u16,
-        /// Project directory offered by the integration settings page.
+        /// 集成设置页使用的项目目录。
         #[arg(long)]
         workspace: Option<PathBuf>,
-        /// Data directory for the QQ package and settings, `<workspace>/artifacts` by default.
+        /// QQ 安装包与设置的数据目录，默认使用 <workspace>/artifacts。
         #[arg(long)]
         storage: Option<PathBuf>,
     },
-    /// Generate the frontend contract from the Rust response types.
+    /// 从 Rust 响应类型生成前端契约。
     Types {
         #[arg(long, default_value = "apps/web/src/api.generated.ts")]
         out: PathBuf,

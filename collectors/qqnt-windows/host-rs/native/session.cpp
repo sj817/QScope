@@ -77,6 +77,8 @@ struct Options {
     const wchar_t* capture;
     unsigned port;
     unsigned flags;
+    unsigned send_rva;
+    unsigned recv_rva;
 };
 
 struct BrokerRequest {
@@ -357,7 +359,12 @@ public:
         auto attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_storage.data());
         check(InitializeProcThreadAttributeList(attributes, 1, 0, &attribute_bytes), "Initialize handle allowlist");
         struct AttributeCleanup { LPPROC_THREAD_ATTRIBUTE_LIST value; ~AttributeCleanup() { DeleteProcThreadAttributeList(value); } } attribute_cleanup{attributes};
-        HANDLE handles[] = {mapping.value, request.value, response.value, mutex.value};
+        // 显式提供 NUL 标准流，防止研究 QQ 保留发起 CLI 的输出管道。
+        SECURITY_ATTRIBUTES standard_security{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+        Handle standard_input(CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &standard_security, OPEN_EXISTING, 0, nullptr));
+        Handle standard_output(CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &standard_security, OPEN_EXISTING, 0, nullptr));
+        check(standard_input.valid() && standard_output.valid(), "Open isolated standard streams");
+        HANDLE handles[] = {mapping.value, request.value, response.value, mutex.value, standard_input.value, standard_output.value};
         check(UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles, sizeof(handles), nullptr, nullptr), "Apply inherited handle allowlist");
         struct CaseInsensitive { bool operator()(const std::wstring& a, const std::wstring& b) const { return _wcsicmp(a.c_str(), b.c_str()) < 0; } };
         std::map<std::wstring, std::wstring, CaseInsensitive> environment;
@@ -375,6 +382,8 @@ public:
         environment[L"QSCOPE_STATE_ROOT"] = state_root;
         environment[L"QSCOPE_ROOT_IMAGE"] = options.executable;
         environment[L"QSCOPE_CLIENT_BUILD"] = options.build;
+        environment[L"QSCOPE_SEND_RVA"] = std::to_wstring(options.send_rva);
+        environment[L"QSCOPE_RECV_RVA"] = std::to_wstring(options.recv_rva);
         environment[L"QSCOPE_READY_PATH"] = ready;
         environment[L"QSCOPE_REGISTRY_ROOT"] = registry_root;
         environment[L"QSCOPE_WRITE_SID"] = private_sid;
@@ -401,7 +410,10 @@ public:
         command += L" --user-data-dir=" + quote(state_root + L"\\electron") + L" --enable-logging=file --log-file=" + quote(state_root + L"\\.qscope\\chromium.log") + L" --no-stdio-init --disable-gpu --disable-breakpad --no-first-run";
         if (!self_test) command += L" --no-sandbox";
         auto writable = wide(command);
-        STARTUPINFOEXW startup{}; startup.StartupInfo.cb = sizeof(startup); startup.StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
+        STARTUPINFOEXW startup{}; startup.StartupInfo.cb = sizeof(startup); startup.StartupInfo.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+        startup.StartupInfo.hStdInput = standard_input.value;
+        startup.StartupInfo.hStdOutput = standard_output.value;
+        startup.StartupInfo.hStdError = standard_output.value;
         startup.StartupInfo.wShowWindow = self_test ? SW_HIDE : SW_SHOWNORMAL;
         startup.StartupInfo.lpDesktop = self_test ? nullptr : const_cast<wchar_t*>(L"winsta0\\default");
         startup.lpAttributeList = attributes;

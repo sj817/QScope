@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import type { RuntimeComponent, RuntimeHealth } from "./api.generated";
-import { message, request } from "./api";
+import { abortError, message, request } from "./api";
 import { Icon } from "./views";
 
 const stateLabels: Record<string, string> = {
@@ -16,8 +16,7 @@ function good(item: RuntimeComponent) {
   return item.state === "ok" || item.state === "pending";
 }
 
-// Checks the parts the research QQ needs and fixes what can be fixed in place. A component that
-// needs a new QScope package leads to the update section instead.
+// 检查研究 QQ 依赖并执行本机修复，需要重新安装产品的组件引导至更新区域。
 export function RuntimeCheck({
   attention,
   notify,
@@ -28,8 +27,14 @@ export function RuntimeCheck({
   onReinstall: () => void;
 }) {
   const [health, setHealth] = useState<RuntimeHealth | null>(null);
-  const [busy, setBusy] = useState<"" | "checking" | "repairing">("");
+  const [manualBusy, setBusy] = useState<"" | "checking" | "repairing">("");
   const [error, setError] = useState("");
+  const busy = manualBusy || (attention && !health && !error ? "checking" : "");
+  const [previousAttention, setPreviousAttention] = useState(attention);
+  if (previousAttention !== attention) {
+    setPreviousAttention(attention);
+    if (attention && !health) setError("");
+  }
   async function run(repair: boolean) {
     setBusy(repair ? "repairing" : "checking");
     setError("");
@@ -54,9 +59,21 @@ export function RuntimeCheck({
       setBusy("");
     }
   }
-  // A problem shows the check right away; otherwise it runs on request.
+  // 发现问题时自动展开检查，否则由用户主动触发。
+  const checkAttention = useEffectEvent((signal: AbortSignal) => {
+    if (health || manualBusy) return;
+    void request<RuntimeHealth>("/settings/qq/health", { signal })
+      .then((result) => {
+        if (!signal.aborted) setHealth(result);
+      })
+      .catch((error) => {
+        if (!abortError(error)) setError(message(error));
+      });
+  });
   useEffect(() => {
-    if (attention && !health && !busy) void run(false);
+    const controller = new AbortController();
+    if (attention) checkAttention(controller.signal);
+    return () => controller.abort();
   }, [attention]);
   const problems = health?.components.filter((item) => !good(item)) || [];
   const reinstall = problems.some((item) => item.repair === "reinstall");

@@ -97,8 +97,7 @@ void status(const char* message, uint32_t error = 0) noexcept {
 }
 void observe(uint8_t direction, DobbyRegisterContext* context) noexcept {
     const int saved_errno = errno;
-    // A single total order with the writer's stop/counter checks prevents a
-    // callback from publishing after the end marker while shutdown races it.
+    // 回调与写入线程的停止和计数检查共用全序，防止结束标记之后继续发布。
     probe->calls.fetch_add(1);
     if (probe->active.load()) {
         uint64_t position = 0;
@@ -203,8 +202,7 @@ void* writer(void*) {
     return nullptr;
 }
 
-// Called after dlopen finishes so relocations and module constructors have run,
-// but before Node receives the module and invokes its exports.
+// 在 dlopen 完成重定位及模块构造后、Node 获取模块并调用导出前执行。
 void install() {
     if (!probe || !probe->active.load() || probe->installed.load() != 0) return;
     for (uint32_t index = 0, count = _dyld_image_count(); index < count; ++index) {
@@ -227,8 +225,7 @@ void install() {
             result = DobbyInstrument(targets[1], receive_callback);
         }
         status(result == 0 ? "hooks_ready" : "hook_install_failed", result);
-        // A module constructor may already have started threads. Never free a
-        // trampoline that another thread might still be executing.
+        // 模块构造函数可能已启动线程，保留仍可能正在执行的跳板。
         if (result != 0) probe->active.store(false);
         probe->installed.store(result == 0 ? 2 : -1);
         return;
