@@ -38,7 +38,8 @@ const archive = release.assets.find((asset) =>
   asset.path.endsWith("-cli-webui.zip"),
 );
 assert.ok(archive);
-await execute("tar", ["-xf", archive.path, "-C", installation]);
+// Windows tar 的参数受代码页影响，工作目录通过 Unicode 进程接口传递。
+await execute("tar", ["-xf", archive.path], { cwd: installation });
 assert.deepEqual(await readdir(installation), ["qscope-cli.exe"]);
 const cli = join(installation, "qscope-cli.exe");
 const fixture = await seed(join(root, "synthetic"));
