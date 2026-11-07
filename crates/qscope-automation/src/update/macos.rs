@@ -164,6 +164,24 @@ fn app_version(app: &Path, expected: Option<&str>) -> Result<String, Error> {
     Ok(version.into())
 }
 
+fn cli_version(cli: &Path, expected: Option<&str>) -> Result<(), Error> {
+    executable(cli)?;
+    let actual = tool(
+        cli.to_str()
+            .ok_or_else(|| invalid("CLI path is not UTF-8"))?,
+        &["--version".as_ref()],
+    )?;
+    let version = std::str::from_utf8(&actual)
+        .ok()
+        .and_then(|text| text.split_whitespace().nth(1))
+        .ok_or_else(|| invalid("CLI 缺少版本号"))?;
+    semver(version)?;
+    if expected.is_some_and(|expected| expected != version) {
+        return Err(invalid("CLI 版本与更新清单不符"));
+    }
+    Ok(())
+}
+
 struct Entry {
     index: usize,
     name: String,
@@ -224,14 +242,17 @@ pub(super) fn unpack(package: &Path, install: Install) -> Result<Vec<(String, Pa
     } else {
         "-macos-arm64-cli-webui.zip"
     };
-    if filename != format!("QScope{suffix}") {
+    let version = if filename == format!("QScope{suffix}") {
+        None
+    } else {
         // 兼容已有发布归档，版本一致性由签名清单校验。
         let version = filename
             .strip_prefix("QScope-")
             .and_then(|name| name.strip_suffix(suffix))
             .ok_or_else(|| invalid("更新包的平台或架构不符"))?;
         semver(version)?;
-    }
+        Some(version)
+    };
     let mut archive =
         zip::ZipArchive::new(File::open(package)?).map_err(|error| invalid(error.to_string()))?;
     if archive.len() > 20000 {
@@ -354,23 +375,11 @@ pub(super) fn unpack(package: &Path, install: Install) -> Result<Vec<(String, Pa
     }
     let (name, file) = if install == Install::App {
         let app = output.path().join("QScope.app");
-        app_version(&app, Some(version))?;
+        app_version(&app, version)?;
         ("QScope.app", app)
     } else {
         let cli = output.path().join("qscope-cli");
-        executable(&cli)?;
-        let actual = tool(
-            cli.to_str()
-                .ok_or_else(|| invalid("CLI path is not UTF-8"))?,
-            &["--version".as_ref()],
-        )?;
-        if std::str::from_utf8(&actual)
-            .ok()
-            .and_then(|text| text.split_whitespace().nth(1))
-            != Some(version)
-        {
-            return Err(invalid("CLI 版本与更新清单不符"));
-        }
+        cli_version(&cli, version)?;
         ("qscope-cli", cli)
     };
     let _ = output.keep();
@@ -388,7 +397,7 @@ pub(super) fn preflight(
             app_version(directory, None)?;
             app_version(source, Some(version))?;
         } else if install == Install::Cli && name == "qscope-cli" {
-            executable(source)?;
+            cli_version(source, Some(version))?;
         } else {
             return Err(invalid("更新包与安装方式不符"));
         }
@@ -625,7 +634,7 @@ mod tests {
         let root = root();
         let source =
             PathBuf::from(std::env::var_os("QSCOPE_MAC_UPDATE_ARCHIVE").expect("Mac app ZIP"));
-        let package = root.path().join(source.file_name().unwrap());
+        let package = root.path().join("QScope-macos-arm64.zip");
         fs::copy(source, &package).unwrap();
         let files = unpack(&package, Install::App).unwrap();
         let app = &files[0].1;
@@ -722,15 +731,25 @@ mod tests {
 
         let source =
             PathBuf::from(std::env::var_os("QSCOPE_MAC_CLI_UPDATE_ARCHIVE").expect("Mac CLI ZIP"));
-        let package = root.path().join(source.file_name().unwrap());
+        let package = root.path().join("QScope-macos-arm64-cli-webui.zip");
         fs::copy(source, &package).unwrap();
         let files = unpack(&package, Install::Cli).unwrap();
         let directory = root.path().join("独立 CLI");
         fs::create_dir(&directory).unwrap();
         fs::write(directory.join("qscope-cli"), b"old").unwrap();
+        assert!(preflight(Install::Cli, &directory, &files, "0.0.0").is_err());
+        assert_eq!(fs::read(directory.join("qscope-cli")).unwrap(), b"old");
         preflight(Install::Cli, &directory, &files, &version).unwrap();
         super::super::replace(&directory, &files).unwrap();
         executable(&directory.join("qscope-cli")).unwrap();
         assert_eq!(fs::read(directory.join("qscope-cli.old")).unwrap(), b"old");
+        let legacy = root
+            .path()
+            .join(format!("QScope-{version}-macos-arm64-cli-webui.zip"));
+        fs::copy(&package, &legacy).unwrap();
+        assert!(unpack(&legacy, Install::Cli).is_ok());
+        let mismatch = root.path().join("QScope-0.0.0-macos-arm64-cli-webui.zip");
+        fs::copy(&package, &mismatch).unwrap();
+        assert!(unpack(&mismatch, Install::Cli).is_err());
     }
 }

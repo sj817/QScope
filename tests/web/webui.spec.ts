@@ -1870,10 +1870,19 @@ test("checked rows get a batch menu, shift-click selects a range and control eve
     })
     .check();
   await page.getByRole("button", { name: "应用筛选", exact: true }).click();
-  await page
-    .getByRole("searchbox", { name: "搜索命令或序号" })
-    .fill("controller_stopped");
-  // 搜索结果延迟刷新，筛选变化会关闭菜单，需等结果出现后再打开菜单。
+  // 等待防抖后的搜索请求，空列表也可能只是刷新中的状态。
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().includes(`/sessions/${id}/events?`) &&
+        new URL(response.url()).searchParams.get("q") ===
+          "controller_stopped" &&
+        response.status() === 200,
+    ),
+    page
+      .getByRole("searchbox", { name: "搜索命令或序号" })
+      .fill("controller_stopped"),
+  ]);
   await expect(
     list.getByRole("option").filter({ hasNotText: "controller_stopped" }),
   ).toHaveCount(0);
