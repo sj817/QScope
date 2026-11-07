@@ -62,8 +62,12 @@
 | `QScope-<版本>-windows-x64-setup.exe` | **推荐（安装版）**：桌面端 + CLI，安装时可勾选注册全局 `qs` 命令 |
 | `QScope-<版本>-windows-x64-portable.zip` | **便携版**：解压即用，双击运行 `QScope.exe`，数据保存在同级目录 |
 | `QScope-<版本>-windows-x64-cli-webui.zip` | **轻量版**：单文件 `qscope-cli.exe`，集成命令行与 WebUI，适合无头/自动化环境 |
+| `QScope-<版本>-macos-arm64.dmg` | **Mac 安装版**：双击后把 `QScope.app` 拖到「应用程序」 |
+| `QScope-<版本>-macos-arm64.zip` | 完整 Mac 应用包，也是 App 在线更新使用的归档 |
+| `QScope-<版本>-macos-arm64-cli-webui.zip` | Mac 独立 CLI，内嵌 WebUI 与采集组件 |
 | `SHA256SUMS.txt` | 文件完整性 SHA256 校验清单 |
 | `qscope-update.json` / `.sig` | 在线更新清单及 Ed25519 签名文件 |
+| `qscope-update-macos-arm64.json` / `.sig` | Mac 专用在线更新清单及 Ed25519 签名文件 |
 
 > **系统要求**：Windows 10 / 11 x64。首次启动需要联网拉取受支持的官方安装包（约 319 MiB）进行解包隔离准备。桌面端基于 WebView2（缺少运行时系统会提示安装）。
 > 
@@ -71,11 +75,13 @@
 
 ### macOS
 
-当前源码可构建 macOS 12 及以上的 Apple Silicon 版 `QScope.app`、DMG 和独立 CLI。Mac 入口支持下载固定版本 QQ 7.0.3（54395），校验官方包后准备独立研究副本，启动双向 MSF 采集与 Chii 页面调试；同时支持 `.qscap`、PB/TLV/JCE 离线分析和本地 WebUI。原生探针、扫码登录前后流量、Chii 的 DOM/样式/控制台及隔离文件目录已在本机研究副本验证。GitHub Release 的现有 Windows 下载和自动更新不适用于 Mac，Intel Mac 暂无打包适配。
+当前源码可构建 macOS 12 及以上的 Apple Silicon 版 `QScope.app`、DMG 和独立 CLI。Mac 入口支持下载固定版本 QQ 7.0.3（54395），校验官方包后准备独立研究副本，启动双向 MSF 采集与 Chii 页面调试；同时支持 `.qscap`、PB/TLV/JCE 离线分析和本地 WebUI。原生探针、扫码登录前后流量、Chii 的 DOM/样式/控制台及隔离文件目录已在本机研究副本验证。Intel Mac 暂无打包适配。现有 `v0.1.1` Release 仍只有 Windows 资产；Mac 更新服务需要下一次发布包含 Mac 安装包和独立签名清单的版本。
 
 在 Mac 上运行 `node tools/build-desktop.ts` 后，安装文件位于 `dist/QScope-<版本>-macos-arm64-<构建标识>/`。双击 DMG，把窗口里的 `QScope.app` 拖到「应用程序」，再从「应用程序」打开；不需要手动解压。也提供 `.app` 和 ZIP。应用使用系统 WKWebView，运行时不需要 Node、开发工具或 WebView2。默认使用 ad-hoc 签名，未做 Apple 公证，下载到其他机器的首次打开可能受到 Gatekeeper 限制；可用 `APPLE_SIGNING_IDENTITY` 指定自己的签名身份，公证需要另行配置。
 
 在「设置 → QQ 抓包」点击「下载并启动 QQ」，首次下载约 465 MiB。QQ 官方 DMG 只读挂载并解包，不执行系统安装；每个 profile 使用独立的研究 `.app`、HOME 和文件目录。默认接收文件目录是该 profile 下的 `files/`，无需全盘访问权限。启动前会校验系统文件写入限制和子进程继承；不满足隔离条件时拒绝启动。仅固定模块身份的已验证采集布局可以启用，其他版本只提供只读扫描。
+
+Mac 应用与独立 CLI 均支持在线更新。更新器读取 Mac 专用签名清单，校验包的 SHA256、架构、版本、应用身份及代码签名，保留执行权限与包内符号链接。App 下载校验完成后点击「重启完成更新」，才会保存录制、关闭研究 QQ、整体替换应用并重新打开；替换失败会恢复原版，成功时保留同级完整备份。账号和抓包仍保存在应用包外的数据目录中。安装目录不可写时会在关闭任务前报错，需手动安装 DMG。
 
 ```bash
 "/Applications/QScope.app/Contents/MacOS/qscope-cli" qq inspect --app /Applications/QQ.app
@@ -241,7 +247,7 @@ flowchart TD
 | 项目 | 当前状态与说明 |
 | :--- | :--- |
 | **适配 QQ 版本** | Windows x64 `9.9.37-54395`；macOS Apple Silicon `7.0.3-54395`，由工具自动下载并准备 |
-| **macOS 分发** | `.app`、DMG 和 CLI；当前未公证，其他机器的首次打开及不同系统版本仍需独立验证；不支持在线更新 |
+| **macOS 分发** | `.app`、DMG 和 CLI；App/CLI 使用独立签名更新清单；当前未公证，其他机器的首次打开及不同系统版本仍需独立验证 |
 | **采集范围** | MSF-NG 协议收发边界及生命周期记录 |
 | **HTTP/HTTPS 上传** | 完整采集仍在开发中，当前存在漏采通路 |
 | **Windows 中文输入法** | 便携沙盒副本暂时禁用系统 TSF/IME，输入法组合输入暂不可用 |
@@ -281,8 +287,10 @@ cargo build -p qscope-web -p qscope-cli --locked && pnpm --dir apps/web test
 
 Mac 打包完成后可运行 `node apps/cli/tests/packaged-macos.ts`，验证 DMG 内的应用和「应用程序」拖拽入口、ZIP 解压后的签名和执行权限，以及中文路径、空 PATH 下的独立 CLI、嵌入资源和合成抓包后台。此检查不启动 QQ，不能替代真实采集验收。
 
+`node tools/test-update-macos.ts` 使用刚打包的 App 与 CLI ZIP，在独立临时目录验证安全解包、签名、符号链接、执行权限、整体替换与原版备份。`node --test tools/release-sign.test.ts` 验证 Windows 清单兼容、Mac 清单隔离、签名和跨平台资产聚合。这两项均已接入 CI。
+
 Mac ARM64 原生探针的开发检查为 `node tools/build-native-macos.ts` 和 `node tools/test-native-macos.ts`。前者校验固定版本的 CMake、Dobby 源包并构建有界内存读取与 `.qscap` 写入组件；后者使用合成模块验证插桩、非法指针、截断、结束标记和原函数行为，均不启动 QQ。真实采集仍需单独验证客户端身份、研究副本权限及数据隔离，不能仅凭扫描候选自动启用探针。
 
 Mac 研究副本的 `collectors/qqnt-macos/bootstrap.cjs` 在 QQ 原入口前初始化隔离目录（文件下载默认为 profile 下的 `files/`），并复用现有认证控制桥；由同一个 `qscope-cli` 的原生 worker 提供隔离环境和采集身份。`node --test collectors/qqnt-macos/bootstrap_test.cjs` 使用模拟 Electron API 检查路径、进程身份和入口加载顺序，不启动 QQ。已有 profile 中显式保存的不可访问目录仍需在 QQ「设置 → 存储管理」中改为该 profile 的 `files/`。
 
-发版时先确认 Cargo、Tauri 与各 `package.json` 的版本号一致，再推送 `v<版本>` tag：`.github/workflows/release.yml` 会构建安装器、便携包与 CLI，用 `QSCOPE_RELEASE_SIGNING_KEY` 签名更新清单并发布 Release。手动运行该 workflow 只构建并上传 artifact，不发布。
+发版时先确认 Cargo、Tauri 与各 `package.json` 的版本号一致，再推送 `v<版本>` tag：`.github/workflows/release.yml` 分别构建 Windows x64 和 Mac ARM64，校验并聚合所有安装包后，仅在独立签名步骤向进程提供 `QSCOPE_RELEASE_SIGNING_KEY`，签署两个平台的更新清单并一次发布完整 Release。Windows 既有 `qscope-update.json` 契约保持不变。手动运行该 workflow 只构建、签名并上传 artifact，不发布；Mac 默认使用 ad-hoc 签名，不代表 Apple 公证。

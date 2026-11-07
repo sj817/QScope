@@ -107,6 +107,33 @@ pub fn data_lease(path: &Path) -> Result<File, Error> {
     Ok(lease)
 }
 
+fn desktop_lock(path: &Path) -> Result<File, Error> {
+    regular_directory(path)?;
+    let path = path.join(".desktop-ui.lock");
+    no_links(&path)?;
+    Ok(OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)?)
+}
+
+/// The Mac updater waits for every desktop using this data directory before relaunching.
+pub fn desktop_lease(path: &Path) -> Result<File, Error> {
+    let file = desktop_lock(path)?;
+    file.try_lock_shared()
+        .map_err(|_| Error::new("service_busy", "QScope is completing an update"))?;
+    Ok(file)
+}
+
+pub fn desktop_exclusive_lease(path: &Path) -> Result<File, Error> {
+    let file = desktop_lock(path)?;
+    file.try_lock()
+        .map_err(|_| Error::new("service_busy", "The previous QScope desktop is still open"))?;
+    Ok(file)
+}
+
 #[derive(Clone)]
 pub struct Layout {
     pub resources: PathBuf,
@@ -241,7 +268,9 @@ pub fn portable_data(executable: &Path) -> PathBuf {
         && let Some(contents) = macos.parent()
         && contents.file_name().is_some_and(|name| name == "Contents")
         && let Some(bundle) = contents.parent()
-        && bundle.extension().is_some_and(|name| name == "app")
+        && bundle
+            .extension()
+            .is_some_and(|name| name.eq_ignore_ascii_case("app"))
     {
         return bundle.with_file_name("data");
     }

@@ -146,9 +146,7 @@ fn stop_backend(data: &Path) -> Result<bool, Error> {
 }
 
 pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
-    if !cfg!(all(windows, target_arch = "x86_64"))
-        && !matches!(options.command, Some(UpdateCommand::Config { .. }))
-    {
+    if !update::supported() && !matches!(options.command, Some(UpdateCommand::Config { .. })) {
         return Err(Error::new(
             "unsupported_platform",
             "Online updates are not enabled for this platform. Install a matching platform package manually.",
@@ -175,6 +173,13 @@ pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
         }
         None => {}
     }
+    let (install, directory) = update::locate()?;
+    if install == update::Install::Development {
+        return Err(Error::new(
+            "update_unsupported",
+            "开发构建不支持在线更新，请用源码重新构建",
+        ));
+    }
     let proxy = if options.no_proxy {
         None
     } else if let Some(proxy) = &options.proxy {
@@ -182,7 +187,6 @@ pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
     } else {
         settings.proxy.clone()
     };
-    let (install, directory) = update::locate()?;
     let manifest = update::check(proxy.as_deref())?;
     settings.last_check_unix = Some(update::now());
     update::save(&data, &settings)?;
@@ -221,6 +225,15 @@ pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
         },
         &AtomicBool::new(false),
     )?;
+    // Signature, archive structure, executable identity and bundle integrity all pass first.
+    let files = if install != update::Install::Installer {
+        Some(update::unpack(&package, install)?)
+    } else {
+        None
+    };
+    if let Some(files) = &files {
+        update::preflight(install, &directory, files, &manifest.version)?;
+    }
     // Only a verified package closes them, so a failed download leaves QQ running.
     if tasks.is_some() {
         let descriptor = service::connect(&data)?;
@@ -231,16 +244,18 @@ pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
             update::start_installer(&package)?;
             json!({"schema_version":1,"installed":false,"installer_started":true,"version":manifest.version,"package":package})
         }
-        update::Install::Portable | update::Install::Cli => {
-            let files = update::unpack(&package, install)?;
-            let stopped = stop_backend(&data)?;
-            if stopped {
-                // An open desktop closes once its backend is gone for an update.
+        update::Install::Portable | update::Install::Cli | update::Install::App => {
+            let files = files.expect("verified update files");
+            if install.needs_restart() {
                 update::mark_restart(&data, &manifest.version)?;
             }
+            let stopped = stop_backend(&data)?;
             update::replace(&directory, &files)?;
             let global = update::refresh_global_command(&directory);
-            json!({"schema_version":1,"installed":true,"version":manifest.version,"directory":directory,"backend_stopped":stopped,"global_command":global,"restart":install == update::Install::Portable})
+            if install == update::Install::App {
+                update::start_relaunch(&directory, &data)?;
+            }
+            json!({"schema_version":1,"installed":true,"version":manifest.version,"directory":directory,"backend_stopped":stopped,"global_command":global,"restart":install.needs_restart()})
         }
         update::Install::Development => unreachable!("development builds have no update asset"),
     };

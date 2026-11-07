@@ -20,6 +20,7 @@ pub struct Manager {
     stage: String,
     manifest: Option<update::Manifest>,
     package: Option<PathBuf>,
+    prepared: Option<Vec<(String, PathBuf)>>,
     downloaded: u64,
     total: u64,
     error: Option<String>,
@@ -27,8 +28,8 @@ pub struct Manager {
 }
 
 fn unsupported(install: update::Install) -> Option<String> {
-    if !cfg!(all(windows, target_arch = "x86_64")) {
-        Some("在线更新目前只支持 Windows x64".into())
+    if !update::supported() {
+        Some("在线更新支持 Windows x64 和 macOS Apple Silicon".into())
     } else if install == update::Install::Development {
         Some("开发构建不支持在线更新，请用源码重新构建".into())
     } else if update::RELEASE_KEY.is_empty() {
@@ -259,7 +260,9 @@ pub async fn install(State(state): State<AppState>) -> Result<Json<UpdateStatus>
         manager.busy = true;
         manager.stage = "downloading".into();
         manager.error = None;
+        manager.prepared = None;
         manager.downloaded = 0;
+        manager.prepared = None;
         manager.total = asset.bytes;
         manifest
     };
@@ -289,6 +292,7 @@ async fn apply(
     install: update::Install,
     directory: PathBuf,
 ) -> Result<(&'static str, PathBuf), ApiError> {
+    let version = manifest.version.clone();
     let package = blocking({
         let state = state.clone();
         move || {
@@ -305,11 +309,26 @@ async fn apply(
         }
     })
     .await?;
-    // A portable copy is replaced on restart, which closes its tasks then.
-    if install != update::Install::Portable {
+    let prepared = if install != update::Install::Installer {
+        let package = package.clone();
+        let directory = directory.clone();
+        Some(
+            blocking(move || {
+                let files = update::unpack(&package, install)?;
+                update::preflight(install, &directory, &files, &version)?;
+                Ok(files)
+            })
+            .await?,
+        )
+    } else {
+        None
+    };
+    // Desktop bundles are replaced on restart, which closes their tasks then.
+    if !install.needs_restart() {
         set(&state.update, |manager| manager.stage = "closing".into());
         close_tasks(state).await?;
     }
+    let update_state = state.update.clone();
     blocking(move || {
         Ok(match install {
             update::Install::Installer => {
@@ -318,13 +337,13 @@ async fn apply(
             }
             update::Install::Cli => {
                 // The CLI copy runs this backend; the next start uses the new files.
-                let files = update::unpack(&package, install)?;
+                let files = prepared.expect("verified CLI files");
                 update::replace(&directory, &files)?;
                 update::refresh_global_command(&directory);
                 ("ready", package)
             }
             _ => {
-                update::unpack(&package, install)?;
+                set(&update_state, |manager| manager.prepared = prepared);
                 ("ready", package)
             }
         })
@@ -334,43 +353,55 @@ async fn apply(
 
 /// Replaces a portable copy, then stops this backend; the desktop closes and the new one opens.
 pub async fn restart(State(state): State<AppState>) -> Result<Json<UpdateStatus>, ApiError> {
-    close_tasks(&state).await?;
     let (install, directory) = update::locate()?;
-    let (package, version) = {
-        let manager = state.update.lock().map_err(|_| lock_error())?;
-        match (&manager.package, &manager.manifest) {
-            (Some(package), Some(manifest))
-                if manager.stage == "ready" && install == update::Install::Portable =>
+    let (files, version) = {
+        let mut manager = state.update.lock().map_err(|_| lock_error())?;
+        if manager.busy {
+            return Err(ApiError::new("update_busy", "更新正在进行"));
+        }
+        match (&manager.prepared, &manager.manifest) {
+            (Some(files), Some(manifest))
+                if manager.stage == "ready" && install.needs_restart() =>
             {
-                (package.clone(), manifest.version.clone())
+                let prepared = (files.clone(), manifest.version.clone());
+                manager.busy = true;
+                manager.stage = "closing".into();
+                prepared
             }
             _ => return Err(ApiError::new("update_missing", "没有等待重启的更新")),
         }
     };
-    let data = state.runtime.storage.clone();
-    blocking(move || {
-        let files = update::unpack(&package, install)?;
-        update::replace(&directory, &files)?;
-        update::refresh_global_command(&directory);
-        update::mark_restart(&data, &version)?;
-        let mut relaunch = std::process::Command::new(directory.join("qscope-cli.exe"));
-        relaunch
-            .arg("--data-dir")
-            .arg(&data)
-            .args(["update", "relaunch", "--directory"])
-            .arg(&directory);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            relaunch.creation_flags(0x0800_0000);
+    let result = async {
+        let check_directory = directory.clone();
+        let check_files = files.clone();
+        let check_version = version.clone();
+        blocking(move || {
+            update::preflight(install, &check_directory, &check_files, &check_version)
+                .map_err(Into::into)
+        })
+        .await?;
+        close_tasks(&state).await?;
+        let data = state.runtime.storage.clone();
+        blocking(move || {
+            update::replace(&directory, &files)?;
+            update::refresh_global_command(&directory);
+            update::mark_restart(&data, &version)?;
+            update::start_relaunch(&directory, &data)?;
+            Ok(())
+        })
+        .await
+    }
+    .await;
+    set(&state.update, |manager| {
+        manager.busy = false;
+        if let Err(error) = &result {
+            manager.stage = "error".into();
+            manager.error = Some(error.message.clone());
+        } else {
+            manager.stage = "restarting".into();
         }
-        relaunch.spawn().map_err(|error| {
-            ApiError::new("update_restart", format!("无法启动新版 QScope：{error}"))
-        })?;
-        Ok(())
-    })
-    .await?;
-    state.update.lock().map_err(|_| lock_error())?.stage = "restarting".into();
+    });
+    result?;
     state.control.lock().map_err(|_| lock_error())?.stop();
     blocking(move || snapshot(&state).map(Json)).await
 }
