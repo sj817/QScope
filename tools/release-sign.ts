@@ -1,11 +1,11 @@
 // Release signing for online updates. The desktop and CLI trust a release only through
-// qscope-update.json and its Ed25519 signature, checked against RELEASE_KEY in
+// the platform manifest and its Ed25519 signature, checked against RELEASE_KEY in
 // crates/qscope-automation/src/update.rs.
 //
 //   node tools/release-sign.ts keygen --out PATH      create a key pair; prints the public key
 //   node tools/release-sign.ts sign --dir RELEASE_DIR --version VERSION [--key PATH]
 //
-// `sign` writes qscope-update.json and qscope-update.json.sig beside the release packages.
+// Windows keeps qscope-update.json; Mac uses qscope-update-macos-arm64.json.
 // The private key comes from --key, QSCOPE_RELEASE_SIGNING_KEY (PEM text) or
 // QSCOPE_RELEASE_SIGNING_KEY_FILE.
 import {
@@ -16,7 +16,7 @@ import {
   verify,
   type KeyObject,
 } from "node:crypto";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -24,14 +24,37 @@ import { sha256 } from "./build-utils.ts";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const repository = "sj817/QScope";
-const packages = [
-  ["installer", (version: string) => `QScope-${version}-windows-x64-setup.exe`],
-  [
-    "portable",
-    (version: string) => `QScope-${version}-windows-x64-portable.zip`,
+export type ReleasePlatform = "windows-x64" | "macos-arm64";
+export const platforms: readonly ReleasePlatform[] = [
+  "windows-x64",
+  "macos-arm64",
+];
+const packages = {
+  "windows-x64": [
+    ["installer", "windows-x64-setup.exe"],
+    ["portable", "windows-x64-portable.zip"],
+    ["cli", "windows-x64-cli-webui.zip"],
   ],
-  ["cli", (version: string) => `QScope-${version}-windows-x64-cli-webui.zip`],
-] as const;
+  "macos-arm64": [
+    ["app", "macos-arm64.zip"],
+    ["cli", "macos-arm64-cli-webui.zip"],
+  ],
+} as const;
+
+export function manifestName(platform: ReleasePlatform): string {
+  return platform === "windows-x64"
+    ? "qscope-update.json"
+    : "qscope-update-macos-arm64.json";
+}
+
+export function packageNames(version: string, platform: ReleasePlatform) {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version))
+    throw new Error("Invalid release version");
+  return packages[platform].map(([kind, suffix]) => ({
+    kind,
+    name: `QScope-${version}-${suffix}`,
+  }));
+}
 
 function rawPublicKey(key: KeyObject): string {
   const der = (key.type === "public" ? key : createPublicKey(key)).export({
@@ -66,20 +89,32 @@ export async function signRelease(
   directory: string,
   version: string,
   keyPath?: string,
+  platform: ReleasePlatform = "windows-x64",
 ): Promise<{ manifest: string; signed: boolean }> {
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version))
     throw new Error("Invalid release version");
   const assets = [];
-  for (const [kind, name] of packages) {
-    const path = join(directory, name(version));
-    const info = await stat(path).catch(() => undefined);
-    if (info?.isFile())
+  for (const { kind, name } of packageNames(version, platform)) {
+    const path = join(directory, name);
+    const info = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (info) {
+      if (
+        !info.isFile() ||
+        info.size <= 0 ||
+        info.size > 1024 ** 3 ||
+        name.length > 128
+      )
+        throw new Error(`Invalid release package ${name}`);
       assets.push({
         kind,
-        name: name(version),
+        name,
         bytes: info.size,
         sha256: await sha256(path),
       });
+    }
   }
   if (!assets.length)
     throw new Error(`No release packages for ${version} in ${directory}`);
@@ -91,16 +126,21 @@ export async function signRelease(
     assets,
   };
   const bytes = Buffer.from(JSON.stringify(manifest, null, 2) + "\n");
-  const manifestPath = join(directory, "qscope-update.json");
-  await writeFile(manifestPath, bytes);
+  const manifestPath = join(directory, manifestName(platform));
   const key = await privateKey(keyPath);
-  if (!key) return { manifest: manifestPath, signed: false };
+  if (!key) {
+    await writeFile(manifestPath, bytes);
+    // A previous signature must never be presented beside a newly unsigned manifest.
+    await rm(manifestPath + ".sig", { force: true });
+    return { manifest: manifestPath, signed: false };
+  }
   const trusted = await trustedKey();
-  if (trusted && trusted !== rawPublicKey(key))
+  if (!trusted || trusted !== rawPublicKey(key))
     throw new Error("The signing key does not match RELEASE_KEY in update.rs");
   const signature = sign(null, bytes, key);
   if (!verify(null, bytes, createPublicKey(key), signature))
     throw new Error("Release signature self-check failed");
+  await writeFile(manifestPath, bytes);
   await writeFile(manifestPath + ".sig", signature.toString("base64") + "\n");
   return { manifest: manifestPath, signed: true };
 }
@@ -117,6 +157,7 @@ if (
       dir: { type: "string" },
       version: { type: "string" },
       key: { type: "string" },
+      platform: { type: "string", default: "windows-x64" },
     },
   });
   if (action === "keygen") {
@@ -143,19 +184,28 @@ if (
   } else if (action === "sign") {
     if (!values.dir || !values.version)
       throw new Error("Use sign --dir RELEASE_DIR --version VERSION");
-    const result = await signRelease(
-      resolve(values.dir),
-      values.version,
-      values.key,
-    );
-    if (!result.signed)
-      throw new Error(
-        "No signing key: set QSCOPE_RELEASE_SIGNING_KEY or pass --key",
+    const selected =
+      values.platform === "all"
+        ? platforms
+        : platforms.filter((platform) => platform === values.platform);
+    if (!selected.length)
+      throw new Error("Use --platform windows-x64, macos-arm64 or all");
+    for (const platform of selected) {
+      const result = await signRelease(
+        resolve(values.dir),
+        values.version,
+        values.key,
+        platform,
       );
-    console.log(`Signed ${result.manifest}`);
+      if (!result.signed)
+        throw new Error(
+          "No signing key: set QSCOPE_RELEASE_SIGNING_KEY or pass --key",
+        );
+      console.log(`Signed ${result.manifest}`);
+    }
   } else {
     console.log(
-      "node tools/release-sign.ts keygen --out PATH\nnode tools/release-sign.ts sign --dir RELEASE_DIR --version VERSION [--key PATH]",
+      "node tools/release-sign.ts keygen --out PATH\nnode tools/release-sign.ts sign --dir RELEASE_DIR --version VERSION [--key PATH] [--platform windows-x64|macos-arm64|all]",
     );
     process.exit(action ? 1 : 0);
   }

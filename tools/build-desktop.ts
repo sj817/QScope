@@ -378,6 +378,17 @@ if (mac) {
       .join("\n") + "\n",
   );
   await command("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
+  const update = await signRelease(
+    distribution,
+    version,
+    undefined,
+    "macos-arm64",
+  );
+  console.log(
+    update.signed
+      ? `Signed update manifest ${update.manifest}`
+      : "Mac update manifest is unsigned; publication signs it in a separate workflow step.",
+  );
   await writeJson(join(build, "manifest.json"), {
     ...manifest,
     release_id: releaseId,
@@ -396,9 +407,7 @@ if (mac) {
     capabilities: manifest.capabilities,
   });
   await writeJson(join(repo, "build/desktop/current.json"), reference);
-  console.log(
-    `macOS app ${app}\nArtifacts ${distribution}\nOnline updates are not enabled in this macOS build.`,
-  );
+  console.log(`macOS app ${app}\nArtifacts ${distribution}`);
   process.exit(0);
 }
 await writeJson(configuration, {
@@ -502,6 +511,7 @@ console.log(`Release assets ${distribution}`);
 await writeJson(join(build, "result.json"), {
   schema_version: 1,
   version,
+  target,
   portable,
   release_id: releaseId,
   desktop_sha256: desktopHash,
