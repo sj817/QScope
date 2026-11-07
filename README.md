@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Target-QQNT%209.9.37--54395-00c853.svg" alt="Target">
   <img src="https://img.shields.io/badge/CLI-qs-orange.svg" alt="CLI">
   <img src="https://img.shields.io/badge/Tauri-v2-24c8db.svg" alt="Tauri">
-  <img src="https://img.shields.io/badge/License-MIT-informational.svg" alt="License">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License"></a>
 </p>
 
 <p align="center">
@@ -21,12 +21,12 @@
 
 <p align="center">
   <a href="#下载与安装">下载安装</a> &nbsp;•&nbsp;
-  <a href="#开始抓包">开始抓包</a> &nbsp;•&nbsp;
+  <a href="#快速上手">快速上手</a> &nbsp;•&nbsp;
   <a href="#命令行与-qs-工具">命令行工具</a> &nbsp;•&nbsp;
-  <a href="#开箱即用的核心体验">核心体验</a> &nbsp;•&nbsp;
+  <a href="#核心特性">核心特性</a> &nbsp;•&nbsp;
   <a href="#架构概览">架构概览</a> &nbsp;•&nbsp;
   <a href="#ai-接入">AI 接入</a> &nbsp;•&nbsp;
-  <a href="#当前范围与已知限制">当前限制</a> &nbsp;•&nbsp;
+  <a href="#当前限制">当前限制</a> &nbsp;•&nbsp;
   <a href="#开发">开发</a> &nbsp;•&nbsp;
   <a href="#免责与合规声明">免责声明</a>
 </p>
@@ -45,29 +45,29 @@
 > [!CAUTION]
 > ### 免责与合规声明
 > 
-> 1. **非官方声明**：“QQ”、“Tencent”等商标及软件著作权均归**腾讯公司**所有。本项目为独立开源技术探索，与腾讯公司无任何关联或官方授权，不分发任何官方二进制文件。
-> 2. **法律合规义务**：**不得使用本工具违反**《中华人民共和国网络安全法》、《数据安全法》、《个人信息保护法》、《计算机软件保护条例》及《刑法》（特别是关于计算机安全的第二百八十五条、第二百八十六条）等法律法规；严禁用于任何入侵、攻击、窃取数据、电信诈骗及黑产等违法犯罪行为。
-> 3. **金融绝对禁令**：**严禁用于任何涉及资金流转的场景**（包括但不限于抢红包、红包协议逆向、钱包分析、支付转账、充值提现等），内置技能直接拦截并拒绝此类请求。
-> 4. **账号风控提示**：接入或调试客户端可能违反《腾讯QQ软件许可及服务协议》，存在**强制下线、功能受限乃至账号封禁**风险。请务必使用测试小号，一切风险由使用者自担。
-> 5. **开源免责与下架**：本项目按“现状”（AS-IS）分发，开发者不对任何使用损失承担连带责任。若相关权利人认为涉嫌侵权，请联系维护者进行沟通、整改或下架。
+> 1. **商标与版权归属**：“QQ”及相关图形商标版权均归腾讯公司所有。本项目为独立的网络协议安全研究与技术探索，与腾讯公司无任何官方关联，亦不提供或分发任何官方二进制文件。
+> 2. **用途限制与合规**：本工具仅供个人学习、技术研究与防御性安全分析使用。使用者须遵守相关法律法规，严禁将本工具用于任何形式的网络攻击、未授权访问、窃取数据、黑产或侵犯他人合法权益的行为。
+> 3. **金融场景硬性禁令**：本项目严格禁止用于任何涉及资金变动与支付结算的场景（包括但不限于抢红包、红包协议分析、钱包、支付转账、充值提现等），自动化扩展与内置技能已默认拦截此类请求。
+> 4. **账号风控风险**：使用调试探针或非官方方式接入客户端，可能触发官方安全风控并导致账号受限、强制下线或封号。请务必使用测试账号，由此产生的任何账号与数据损失均由使用者自行承担。
+> 5. **开源许可与免责**：本项目代码按“现状”（AS-IS）提供，不包含任何明示或暗示的担保。若相关权利人认为本项目内容涉嫌侵权，请联系维护者进行沟通、整改或下架处理。
 
 ---
 
 ## 下载与安装
 
-从 [Releases](https://github.com/sj817/QScope/releases) 下载。每个版本由 `v<版本>` tag 触发 GitHub Actions 构建并签名：
+从 [Releases](https://github.com/sj817/QScope/releases) 下载对应构建版本：
 
-| 发布文件 | 说明与使用方式 |
+| 发布文件 | 说明与用途 |
 | :--- | :--- |
-| `QScope-<版本>-windows-x64-setup.exe` | **推荐（安装版）**：Windows 11 风格 Inno 安装器，安装桌面端与 CLI，可一键注册全局 `qs` 命令 |
-| `QScope-<版本>-windows-x64-portable.zip` | **推荐（便携版）**：解压即用，直接运行 `QScope.exe`，同目录自带 `qscope-cli.exe` 驱动 |
-| `QScope-<版本>-windows-x64-cli-webui.zip` | **轻量版（无头 / 终端）**：单文件 `qscope-cli.exe`，包含 CLI 与内嵌 WebUI，适合自动化流水线 |
-| `SHA256SUMS.txt` | 用于核对下载文件的 SHA256 完整性哈希 |
-| `qscope-update.json` / `.sig` | 在线更新清单及其 Ed25519 签名，由桌面端和 CLI 自动读取 |
+| `QScope-<版本>-windows-x64-setup.exe` | **推荐（安装版）**：桌面端 + CLI，安装时可勾选注册全局 `qs` 命令 |
+| `QScope-<版本>-windows-x64-portable.zip` | **便携版**：解压即用，双击运行 `QScope.exe`，数据保存在同级目录 |
+| `QScope-<版本>-windows-x64-cli-webui.zip` | **轻量版**：单文件 `qscope-cli.exe`，集成命令行与 WebUI，适合无头/自动化环境 |
+| `SHA256SUMS.txt` | 文件完整性 SHA256 校验清单 |
+| `qscope-update.json` / `.sig` | 在线更新清单及 Ed25519 签名文件 |
 
-> 系统支持 Windows 10 / 11 x64。首次启动需要联网下载约 319 MiB 的受支持官方安装包。桌面端使用 WebView2，安装器在缺少运行时时会自动准备。
+> **系统要求**：Windows 10 / 11 x64。首次启动需要联网拉取受支持的官方安装包（约 319 MiB）进行解包隔离准备。桌面端基于 WebView2（缺少运行时系统会提示安装）。
 > 
-> 支持文件关联：在终端或资源管理器执行 `QScope.exe "D:\captures\example.qscap"` 可直接打开查看，已有窗口会自动接收新记录。
+> **文件关联**：直接执行 `QScope.exe "D:\captures\example.qscap"` 可打开历史抓包，已启动的窗口会自动接收并展示记录。
 
 ### macOS
 
@@ -90,7 +90,7 @@
 
 ---
 
-## 开始抓包
+## 快速上手
 
 以下流程适用于 Windows x64 和 macOS Apple Silicon。
 
@@ -99,20 +99,18 @@
 3. **手动登录**：在弹出的研究 QQ 窗口中手动扫码登录，随后进行需要观察的操作。
 4. **实时分析**：回到 QScope 即可查看双向原始收发包。可随时开始/停止分段录制，或点击「打开 DevTools」唤起内置页面调试器；用完后在「设置 → QQ 抓包」点击「关闭 QQ」。
 
-> **提示**：退出桌面端会一并关闭从界面启动的研究 QQ，抓包文件会写入结束标记；通过 `qs qq start` 或 AI 启动的 QQ 与录制继续运行，再次打开界面会自动重连。
+> **退出行为**：关闭桌面端会自动退出由该界面启动的研究 QQ，抓包流会写入结束标记；通过命令行 `qs qq start` 或 AI 启动的后台实例不受影响。
 >
-> **环境异常**：「设置 → QQ 抓包」的运行环境检查会列出缺失或损坏的组件，可一键修复探针文件和 QQ 解包；安装包本身缺少组件时到「设置 → 更新」下载新版。
->
-> **更新**：打开 QScope 时每天最多检查一次 GitHub Release，只提示不自动下载；更新包通过发布签名和 SHA256 校验后，才会保存进行中的录制、关闭研究 QQ，再替换程序并重启。命令行 `qs update --yes` 遇到运行中的任务会拒绝，需要再加 `--close-tasks`。
+> **环境修复**：「设置 → QQ 抓包」提供了运行环境检查，支持一键校验并修复损坏的探针文件或解包数据。
 
 ---
 
 ## 命令行与 qs 工具
 
-安装器支持直接注册全局短命令 `qs`。若使用便携版，可在解压目录执行一次命令完成注册：
+安装器支持直接注册全局 `qs` 命令。如果使用便携版，可在解压目录下手动注册：
 
 ```powershell
-# 将 qs 安装到 %USERPROFILE%\.local\bin\qs.exe，随后打开新终端即可使用
+# 将 qs 安装到 %USERPROFILE%\.local\bin\qs.exe
 .\qscope-cli.exe cli install
 
 # 卸载全局短命令
@@ -122,84 +120,83 @@
 ### 常用命令速查
 
 ```powershell
-qs web                     # 启动 WebUI 并自动在默认浏览器中打开
-qs qq start                # 启动受保护的便携 QQ 研究副本
-qs devtools open           # 打开当前可见 QQ 窗口的 DevTools 面板
-qs capture sessions        # 列出当前活动的抓包会话
-qs capture record start    # 开始切片录制当前会话流量
-qs capture record stop     # 停止录制并保存为独立 .qscap 文件
-qs qq stop                 # 退出当前活动的研究 QQ
-qs doctor                  # 执行环境依赖与状态健康检查
+qs web                     # 启动 WebUI 并在默认浏览器中打开
+qs qq start                # 启动隔离的研究 QQ 副本
+qs devtools open           # 打开当前可见 QQ 窗口的 DevTools
+qs capture sessions        # 查看当前活动的抓包会话
+qs capture record start    # 开始录制当前流量切片
+qs capture record stop     # 停止录制并保存为独立 .qscap
+qs qq stop                 # 退出当前运行的研究 QQ
+qs doctor                  # 运行环境依赖与状态检查
 qs decode --hex "08 96 01" # 离线解码 Protobuf 十六进制数据
-qs update --check          # 查询 GitHub 上的最新版本
-qs update                  # 下载、校验签名并安装新版本
-qs update config --proxy http://127.0.0.1:7890  # 设置更新代理（仅 http://）
+qs update --check          # 检查 GitHub 上的新版本
+qs update                  # 下载、校验签名并更新到新版
+qs update config --proxy http://127.0.0.1:7890  # 设置更新代理
 ```
 
-`qscope-cli.exe` 原生支持所有 `qs` 命令。常用高级参数示例：
+`qscope-cli.exe` 原生支持所有 `qs` 命令。常用进阶参数：
 
 ```powershell
 # 自定义抓包目录或端口
 qs web --captures "D:\captures"
 qs web --port 19850 --no-open
 
-# 使用便携数据目录（直接保存在程序旁的 data/ 文件夹）
+# 便携模式（数据保存在程序同级 data/ 目录）
 qscope-cli.exe --portable web
 
-# 明确指定自定义数据目录或输出 JSON 结果
+# 指定自定义数据目录或以 JSON 输出
 qs --data-dir "D:\QScope-data" web
 qs --json capture sessions
 ```
 
-> **数据路径说明**：默认数据存储于 `%LOCALAPPDATA%\QScope\`，`--portable` 模式使用程序同级的 `data/`。原始 `.qscap` 文件、账号状态、设置和日志均保存在该目录，SQLite 索引可在需要时通过原包完全重建。
+> **数据路径**：默认保存在 `%LOCALAPPDATA%\QScope\`，`--portable` 模式使用程序旁的 `data/`。原始 `.qscap` 文件、设置和日志均保存在此目录，SQLite 数据库为索引缓存，可根据原包随时重建。
 
 Mac 默认使用 `~/Library/Application Support/QScope/`；通过 `open /path/QScope.app --args --portable` 启动时，数据位于 `.app` 外部同级的 `data/`，不会写入已签名的应用包。Mac 的 `cli install` 安装同一个 CLI 为 `~/.local/bin/qs`，报告当前 PATH 是否可用，不修改 shell 配置文件。
 
 ---
 
-## 开箱即用的核心体验
+## 核心特性
 
-- **启动即被动捕获**：MSF-NG 探针在客户端启动前夕自动就绪，冷启动握手（如 `wtlogin.trans_emp`、密钥协商）、用户扫码登录及后续双向请求与推送全程被动记录，保证现场原始无损。
-- **环境隔离沙盒**：写入操作重定向至沙盒专属目录，映射私有 HKCU 注册表，系统常用文件夹重定向，绝不污染本机日常使用的 QQ 聊天记录与个人设置。
-- **无 Schema 保真解码**：
-  - **Protobuf Wire 剖析**：无需事先编写 `.proto` 文件，真实还原 varint、fixed32/64、LEN、group 字段号与字节结构，保留 64 位大整数精度。
-  - **多协议按需切换**：显式切换 TLV16-BE 与 JCE/Tars 视图。
-  - **双向联动高亮**：字段树与右侧 Hex 视窗双向同步定位，点击字段即查原始字节范围。
-- **多包比对与切片录制**：
-  - **差异对比**：支持挑选 2 至 8 个数据包比对字段路径与字节差异，一键开启“只看差异”。
-  - **独立切片录制**：在长时全局抓包中随时开始/停止一段局部流量录制（单段上限约 256 MiB / 1 小时），生成独立的 `.qscap` 文件。
+- **启动期探针捕获**：基于 MSF-NG 被动探针，在 QQ 进程启动阶段挂载。完整记录从冷启动握手（`wtlogin.trans_emp`、密钥协商）、扫码登录到后续业务收发的双向原始字节流。
+- **沙盒运行环境**：文件写入与注册表访问均重定向至独立沙盒目录，完全隔离本机日常使用的 QQ 聊天数据与配置。
+- **无 Schema 协议解码**：
+  - **Protobuf Wire 解码**：无需事先提供 `.proto`，按字段号、wire type 和原始字节范围还原层级树，保持 64 位大整数精度。
+  - **多格式视图**：支持在 Protobuf、TLV16-BE 和 JCE/Tars 视图间切换，字段树与十六进制原始字节双向高亮定位。
+- **多包对比与分段录制**：
+  - **包差异对齐**：支持挑选 2~8 个数据包按字段路径并排对比，一键过滤相同字段。
+  - **切片录制**：长连接持续抓包过程中，可随时截取关键会话并单独另存为 `.qscap` 文件。
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img src=".github/screenshots/compare-light.png" alt="多包对比：按字段路径对齐，只看差异"><p align="center">多包对比：按字段路径对齐，只看差异</p></td>
-    <td width="50%" valign="top"><img src=".github/screenshots/value-light.png" alt="完整值查看：字符串里的 JSON 自动识别并高亮"><p align="center">完整值查看：字符串里的 JSON 自动识别并高亮</p></td>
+    <td width="50%" valign="top"><img src=".github/screenshots/compare-light.png" alt="多包对比：按字段路径对齐，只看差异"><p align="center">多包 Diff</p></td>
+    <td width="50%" valign="top"><img src=".github/screenshots/value-light.png" alt="完整值查看：字符串里的 JSON 自动识别并高亮"><p align="center">完整值查看与 JSON 高亮</p></td>
   </tr>
   <tr>
-    <td width="50%" valign="top"><img src=".github/screenshots/commands-light.png" alt="命令筛选：按出现次数只看或排除某个命令"><p align="center">命令筛选：按出现次数只看或排除某个命令</p></td>
-    <td width="50%" valign="top"><img src=".github/screenshots/settings-light.png" alt="设置：一键下载、校验并启动研究用 QQ"><p align="center">设置：一键下载、校验并启动研究用 QQ</p></td>
+    <td width="50%" valign="top"><img src=".github/screenshots/commands-light.png" alt="命令筛选：按出现次数只看或排除某个命令"><p align="center">按命令过滤流量</p></td>
+    <td width="50%" valign="top"><img src=".github/screenshots/settings-light.png" alt="设置：一键下载、校验并启动研究用 QQ"><p align="center">环境管理与一键准备</p></td>
   </tr>
 </table>
 
-> 截图为真实界面，数据全部由 `apps/web/tests/showcase.mjs` 合成：账号 10001 等均为虚构，字段布局只作演示，不代表已还原的 QQ 协议。构建后台与 WebUI 后运行 `pnpm --dir apps/web run screenshots` 可重新生成。
+> 截图为真实界面，测试数据由 `apps/web/tests/showcase.mjs` 合成生成，不包含任何真实协议内容。
 
 ---
 
 ## 架构概览
 
-整体采用上下垂直分层设计，确保展现层、核心解析库与注入采集层解耦清晰：
+前后端解耦设计，各层职责边界清晰：
 
 ```mermaid
 flowchart TD
-    subgraph UI ["展现与交互"]
+    subgraph UI ["客户端与前端"]
         Desktop["Tauri 2 桌面端 (apps/desktop)"]
         WebUI["React WebUI (apps/web)"]
         Agent["AI 技能 (Claude / Codex / Cursor)"]
     end
 
-    subgraph Core ["服务与核心引擎"]
+    subgraph Core ["本地服务与核心引擎"]
         CLI["qscope-cli 独立 CLI / qs (apps/cli)"]
         Server["嵌入式 HTTP 服务 (127.0.0.1 动态端口)"]
-        Engine["qscope-core 核心库 (Wire 检查 / 格式解析 / 校验)"]
+        Engine["qscope-core 核心库 (Wire 解析 / 格式校验)"]
     end
 
     subgraph Host ["采集宿主与探针"]
@@ -208,7 +205,7 @@ flowchart TD
         DevToolsBridge["Chii 页面调试服务 (collectors/devtools)"]
     end
 
-    subgraph Target ["目标运行进程"]
+    subgraph Target ["目标 QQ 进程"]
         QQApp["QQNT 客户端 (9.9.37-54395 便携副本)"]
     end
 
@@ -230,16 +227,16 @@ flowchart TD
 
 ## AI 接入
 
-设置页支持为 **Claude Code**、**Codex** 和 **Cursor** 安装原生技能，可选择当前项目、指定目录或全局安装，也支持卸载及复制通用安装指令：
+设置页提供了一键为 **Claude Code**、**Codex** 和 **Cursor** 安装原生 Skill 的能力，支持项目级或全局安装：
 
-- **权限自动合并**：Claude Code 安装时会自动将 CLI 绝对路径合并进对应范围的命令白名单中，卸载时会精确清理本次新增权限。
-- **闭环协同调试**：AI 助手通过同一个 CLI 进行会话查询、解码、对比与录制，并借助受保护的 Loopback 控制桥查看及操作 QQ 页面，包括可见文本快照、点击、输入、按键和截图（强制校验 PID 与出生 FILETIME，防止误操作其他窗口）。
-- **排除后台流量**：`capture events` / `capture wait` 支持 `--hide-heartbeat` 和 `--baseline 秒数`，后者排除动作前已出现的命令，只留下动作带来的新包；`capture noise` 列出安静时段的命令频率。排除只作用于查询，录制保留全部原包。
-- **严格合规拦截**：项目严禁任何金融相关任务，内置技能要求直接拒绝红包、转账、钱包等相关指令。
+- **自动化分析**：AI 可直接调用 `qs` CLI 进行会话查询、协议解码、对比和录制，无需人工导出。
+- **界面观察与控制**：通过受限的本地 Loopback 控制桥，AI 可以获取 QQ 界面文本快照、模拟点击/按键以及捕获屏幕（通过 PID 与进程启动时间双重校验，防止误操作其他窗口）。
+- **流量去噪**：支持 `--hide-heartbeat` 过滤心跳，以及 `--baseline` 过滤动作前已存在的背景命令，方便定位操作触发的新包。
+- **金融禁令**：内置 Skill 强制硬编码拦截任何涉及红包、支付、转账等金融相关操作。
 
 ---
 
-## 当前范围与已知限制
+## 当前限制
 
 | 项目 | 当前状态与说明 |
 | :--- | :--- |
@@ -252,8 +249,6 @@ flowchart TD
 | **Schema 编辑与导出** | 待实现（当前为 Wire 级无 Schema 候选解释，不自动生成真实 `.proto`） |
 
 > **安全与隐私提示**：抓包默认保存在数据目录中，文件包含真实的聊天数据、票据等敏感凭据。向外部分享任何 `.qscap` 前请务必先进行脱敏。
-> 
-> 开发与检查命令见下方「开发」，协作规范见 [AGENTS.md](AGENTS.md)。
 
 ---
 
@@ -269,7 +264,7 @@ node tools/webui.ts            # 构建并启动开发 WebUI；--fresh 查看首
 node tools/build-desktop.ts    # 构建本机平台桌面端、CLI 与安装包；--no-bundle 省略安装器/DMG
 ```
 
-提交前的检查与 CI 一致：
+提交代码前的检查命令：
 
 ```bash
 node tools/check-repo.ts
