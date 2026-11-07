@@ -2201,6 +2201,43 @@ test("closing tasks for an update saves running recordings through the local con
   );
 });
 
+test("a verified Mac app update offers restart and shows the relaunch state", async ({
+  page,
+}) => {
+  let stage = "ready";
+  const status = () => ({
+    current: "0.1.1",
+    install: "app",
+    unsupported: null,
+    stage,
+    latest: "0.1.2",
+    notes_url: "https://github.com/sj817/QScope/releases/tag/v0.1.2",
+    downloaded: "100",
+    total: "100",
+    error: null,
+    checked_unix: null,
+    check_on_launch: true,
+    proxy: null,
+  });
+  for (const path of ["**/api/v1/update", "**/api/v1/update/check"])
+    await page.route(path, (route) => route.fulfill({ json: status() }));
+  let restarts = 0;
+  await page.route("**/api/v1/update/restart", (route) => {
+    restarts++;
+    stage = "restarting";
+    return route.fulfill({ json: status() });
+  });
+  await page.goto("/?page=settings&section=update");
+  const settings = page.getByRole("dialog", { name: "QScope 设置" });
+  await expect(settings).toContainText("macOS 应用");
+  await expect(settings).toContainText("已下载并校验，重启后生效");
+  await settings
+    .getByRole("button", { name: "重启完成更新", exact: true })
+    .click();
+  await expect(settings).toContainText("正在关闭并打开新版 QScope");
+  expect(restarts).toBe(1);
+});
+
 test("an update names the research QQ and recordings it closes after the package is verified", async ({
   page,
 }) => {
@@ -2315,9 +2352,10 @@ test("settings check the runtime with a fix for each part and keep update proxie
   await settings.getByRole("tab", { name: /更新/ }).click();
   await expect(page).toHaveURL(/section=update/);
   await expect(settings).toContainText(
-    process.platform === "win32" && process.arch === "x64"
+    (process.platform === "win32" && process.arch === "x64") ||
+      (process.platform === "darwin" && process.arch === "arm64")
       ? "开发构建不支持在线更新"
-      : "在线更新目前只支持 Windows x64",
+      : "在线更新支持 Windows x64 和 macOS Apple Silicon",
   );
   await expect(
     settings.getByRole("button", { name: "检查更新" }),

@@ -15,11 +15,18 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 pub const REPOSITORY: &str = "sj817/QScope";
 /// Base64 of the raw 32-byte Ed25519 public key that signs release manifests. While it is
 /// empty this build has no trusted key and online updates stay off.
 pub const RELEASE_KEY: &str = "T8/Uu63zwJsaS0Hl3dsiFZzHSBs937j22pMdAFnZjJ4=";
-pub const MANIFEST: &str = "qscope-update.json";
+pub const MANIFEST: &str = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    "qscope-update-macos-arm64.json"
+} else {
+    "qscope-update.json"
+};
 const MAX_MANIFEST: u64 = 64 * 1024;
 const MAX_PACKAGE: u64 = 1024 * 1024 * 1024;
 
@@ -42,6 +49,8 @@ pub struct Asset {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Install {
+    /// The complete signed macOS application bundle.
+    App,
     /// Installed by the setup program, which can replace a running copy.
     Installer,
     /// The desktop and CLI unpacked side by side.
@@ -55,6 +64,7 @@ pub enum Install {
 impl Install {
     pub fn name(self) -> &'static str {
         match self {
+            Self::App => "app",
             Self::Installer => "installer",
             Self::Portable => "portable",
             Self::Cli => "cli",
@@ -64,10 +74,22 @@ impl Install {
     fn files(self) -> &'static [&'static str] {
         match self {
             Self::Portable => &["QScope.exe", "qscope-cli.exe"],
+            Self::Cli if cfg!(target_os = "macos") => &["qscope-cli"],
             Self::Cli => &["qscope-cli.exe"],
-            Self::Installer | Self::Development => &[],
+            Self::App | Self::Installer | Self::Development => &[],
         }
     }
+
+    pub fn needs_restart(self) -> bool {
+        matches!(self, Self::Portable | Self::App)
+    }
+}
+
+pub const fn supported() -> bool {
+    cfg!(any(
+        all(windows, target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64")
+    ))
 }
 
 /// The install type of a product directory.
@@ -83,6 +105,12 @@ pub fn classify(directory: &Path) -> Install {
     });
     if development {
         Install::Development
+    } else if cfg!(target_os = "macos")
+        && directory
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+    {
+        Install::App
     } else if directory.join("qscope-install.json").is_file() {
         Install::Installer
     } else if directory.join("QScope.exe").is_file() {
@@ -111,7 +139,44 @@ pub fn locate() -> Result<(Install, PathBuf), Error> {
             .and_then(|target| target.parent().map(Path::to_path_buf))
             .ok_or_else(|| Error::new("update_location", "qs does not name its source CLI"))?;
     }
+    #[cfg(target_os = "macos")]
+    if let Some(bundle) = macos::bundle_root(&directory) {
+        directory = bundle;
+    }
+    if runtime::BUILD_ID == "development" {
+        return Ok((Install::Development, directory));
+    }
     Ok((classify(&directory), directory))
+}
+
+pub fn cli_path(directory: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        if directory
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+        {
+            directory.join("Contents/MacOS/qscope-cli")
+        } else {
+            directory.join("qscope-cli")
+        }
+    } else {
+        directory.join("qscope-cli.exe")
+    }
+}
+
+/// Check the installed destination and staged bundle before interrupting research tasks.
+pub fn preflight(
+    install: Install,
+    directory: &Path,
+    files: &[(String, PathBuf)],
+    version: &str,
+) -> Result<(), Error> {
+    #[cfg(target_os = "macos")]
+    if matches!(install, Install::App | Install::Cli) {
+        return macos::preflight(install, directory, files, version);
+    }
+    let _ = (install, directory, files, version);
+    Ok(())
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -210,21 +275,20 @@ fn trusted(url: &reqwest::Url) -> bool {
 }
 
 fn client(proxy: Option<&str>) -> Result<reqwest::blocking::Client, Error> {
-    let builder = reqwest::blocking::ClientBuilder::from(
-        reqwest::Client::builder().read_timeout(Duration::from_secs(30)),
-    )
-    .connect_timeout(Duration::from_secs(15))
-    .timeout(Duration::from_secs(30 * 60))
-    .user_agent(concat!("QScope/", env!("CARGO_PKG_VERSION")))
-    .redirect(reqwest::redirect::Policy::custom(|attempt| {
-        if attempt.previous().len() >= 5 {
-            attempt.error("too many redirects")
-        } else if trusted(attempt.url()) {
-            attempt.follow()
-        } else {
-            attempt.error("redirect left GitHub")
-        }
-    }));
+    // Async read_timeout creates a Tokio timer when polled by a plain blocking thread.
+    let builder = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(30))
+        .user_agent(concat!("QScope/", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                attempt.error("too many redirects")
+            } else if trusted(attempt.url()) {
+                attempt.follow()
+            } else {
+                attempt.error("redirect left GitHub")
+            }
+        }));
     let builder = match proxy {
         Some(proxy) => builder.proxy(reqwest::Proxy::all(proxy)?),
         None => builder.no_proxy(),
@@ -291,7 +355,7 @@ fn validate(manifest: &Manifest) -> Result<(), Error> {
         return Err(invalid("Too many release assets"));
     }
     for (index, asset) in manifest.assets.iter().enumerate() {
-        if !["installer", "portable", "cli"].contains(&asset.kind.as_str())
+        if !["installer", "portable", "cli", "app"].contains(&asset.kind.as_str())
             || manifest.assets[..index]
                 .iter()
                 .any(|other| other.kind == asset.kind)
@@ -373,6 +437,7 @@ pub fn file_sha256(path: &Path) -> Result<String, Error> {
 
 pub fn asset(manifest: &Manifest, install: Install) -> Result<&Asset, Error> {
     let kind = match install {
+        Install::App => "app",
         Install::Installer => "installer",
         Install::Portable => "portable",
         Install::Cli => "cli",
@@ -380,11 +445,24 @@ pub fn asset(manifest: &Manifest, install: Install) -> Result<&Asset, Error> {
             return Err(Error::new("update_unsupported", "开发构建不支持在线更新"));
         }
     };
-    manifest
+    let asset = manifest
         .assets
         .iter()
         .find(|asset| asset.kind == kind)
-        .ok_or_else(|| Error::new("update_asset", "这个版本没有适合当前安装方式的更新包"))
+        .ok_or_else(|| Error::new("update_asset", "这个版本没有适合当前安装方式的更新包"))?;
+    if cfg!(target_os = "macos") && matches!(install, Install::App | Install::Cli) {
+        let expected = match install {
+            Install::App => format!("QScope-{}-macos-arm64.zip", manifest.version),
+            _ => format!("QScope-{}-macos-arm64-cli-webui.zip", manifest.version),
+        };
+        if asset.name != expected {
+            return Err(Error::new(
+                "update_asset",
+                "更新包的平台、架构或版本与当前安装不符",
+            ));
+        }
+    }
+    Ok(asset)
 }
 
 /// Downloads the package for this install type into `data/updates/<version>/` and checks it
@@ -428,9 +506,13 @@ pub fn download(
     let mut hash = Sha256::new();
     let mut buffer = vec![0u8; 64 * 1024];
     let mut received = 0u64;
+    let deadline = Instant::now() + Duration::from_secs(30 * 60);
     loop {
         if cancelled.load(Ordering::Acquire) {
             return Err(Error::new("update_cancelled", "更新下载已取消"));
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::new("update_timeout", "更新下载超过 30 分钟"));
         }
         let size = response.read(&mut buffer)?;
         if size == 0 {
@@ -461,6 +543,10 @@ pub fn download(
 
 /// Unpacks a portable or CLI package. The archive must hold exactly the product executables.
 pub fn unpack(package: &Path, install: Install) -> Result<Vec<(String, PathBuf)>, Error> {
+    #[cfg(target_os = "macos")]
+    if matches!(install, Install::App | Install::Cli) {
+        return macos::unpack(package, install);
+    }
     let expected = install.files();
     let invalid = |message: &str| Error::new("update_package", message);
     let mut archive = zip::ZipArchive::new(fs::File::open(package)?)
@@ -508,6 +594,12 @@ pub fn unpack(package: &Path, install: Install) -> Result<Vec<(String, PathBuf)>
 /// one moves aside to `<name>.old` and the new copy takes its name; any failure restores the
 /// previous files.
 pub fn replace(directory: &Path, files: &[(String, PathBuf)]) -> Result<(), Error> {
+    #[cfg(target_os = "macos")]
+    if let [(name, source)] = files
+        && name == "QScope.app"
+    {
+        return macos::replace_app(directory, source);
+    }
     let mut done: Vec<(PathBuf, PathBuf, bool)> = Vec::new();
     let result = (|| {
         for (name, source) in files {
@@ -559,8 +651,13 @@ pub fn replace(directory: &Path, files: &[(String, PathBuf)]) -> Result<(), Erro
 
 fn same_file(left: &Path, right: &Path) -> bool {
     let normal = |path: &Path| {
-        crate::display_path(&path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
-            .to_lowercase()
+        let value =
+            crate::display_path(&path.canonicalize().unwrap_or_else(|_| path.to_path_buf()));
+        if cfg!(windows) {
+            value.to_lowercase()
+        } else {
+            value
+        }
     };
     normal(left) == normal(right)
 }
@@ -575,15 +672,19 @@ pub fn refresh_global_command(directory: &Path) -> serde_json::Value {
     let Ok(record) = runtime::read_settings(&bin.join(".qs-command.json")) else {
         return serde_json::json!(null);
     };
-    let cli = directory.join("qscope-cli.exe");
+    let cli = cli_path(directory);
     if !record["target"]
         .as_str()
         .is_some_and(|target| same_file(Path::new(target), &cli))
     {
         return serde_json::json!(null);
     }
-    let command = bin.join("qs.exe");
-    let parked = bin.join("qs.exe.old");
+    let command = bin.join(if cfg!(windows) { "qs.exe" } else { "qs" });
+    let parked = bin.join(if cfg!(windows) {
+        "qs.exe.old"
+    } else {
+        "qs.old"
+    });
     let running = std::env::current_exe().is_ok_and(|current| same_file(&current, &command));
     if running {
         let _ = std::fs::remove_file(&parked);
@@ -619,31 +720,119 @@ pub fn mark_restart(data: &Path, version: &str) -> Result<(), Error> {
     )
 }
 
+pub fn start_relaunch(directory: &Path, data: &Path) -> Result<(), Error> {
+    let logs = data.join("logs");
+    runtime::regular_directory(&logs)?;
+    let log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(logs.join("update-relaunch.log"))?;
+    let mut command = Command::new(cli_path(directory));
+    command
+        .arg("--data-dir")
+        .arg(data)
+        .args(["update", "relaunch", "--directory"])
+        .arg(directory)
+        .stdin(std::process::Stdio::null())
+        .stdout(log.try_clone()?)
+        .stderr(log);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    command
+        .spawn()
+        .map_err(|error| Error::new("update_restart", format!("无法启动新版 QScope：{error}")))?;
+    Ok(())
+}
+
 /// Waits until the replaced desktop and backend have exited, then opens the new desktop.
 pub fn relaunch(directory: &Path, data: &Path) -> Result<(), Error> {
-    let deadline = Instant::now() + Duration::from_secs(60);
-    loop {
-        let waiting = ["QScope.exe.old", "qscope-cli.exe.old"]
-            .iter()
-            .map(|name| directory.join(name))
-            .filter(|path| path.exists() && fs::remove_file(path).is_err())
-            .count();
-        if waiting == 0 || Instant::now() >= deadline {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(250));
+    #[cfg(target_os = "macos")]
+    {
+        macos::relaunch(directory, data)
     }
-    let _ = fs::remove_file(data.join(runtime::RESTART_MARKER));
-    Command::new(directory.join("QScope.exe"))
-        .spawn()
-        .map_err(|error| Error::new("update_restart", format!("无法打开新版 QScope：{error}")))?;
-    Ok(())
+    #[cfg(not(target_os = "macos"))]
+    {
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            let waiting = ["QScope.exe.old", "qscope-cli.exe.old"]
+                .iter()
+                .map(|name| directory.join(name))
+                .filter(|path| path.exists() && fs::remove_file(path).is_err())
+                .count();
+            if waiting == 0 || Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        let _ = fs::remove_file(data.join(runtime::RESTART_MARKER));
+        Command::new(directory.join("QScope.exe"))
+            .spawn()
+            .map_err(|error| {
+                Error::new("update_restart", format!("无法打开新版 QScope：{error}"))
+            })?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ring::signature::KeyPair as _;
+
+    #[test]
+    fn blocking_update_download_reads_body_without_a_caller_tokio_runtime() {
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let producer = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut headers = Vec::new();
+            while !headers.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                headers.push(byte[0]);
+                assert!(headers.len() < 8192);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8192\r\nConnection: close\r\n\r\n")
+                .unwrap();
+            for _ in 0..4 {
+                stream.write_all(&[42u8; 2048]).unwrap();
+            }
+        });
+        let bytes = std::thread::spawn(move || fetch(&client(None).unwrap(), &url, 8192))
+            .join()
+            .expect("Blocking callers must not need a Tokio reactor")
+            .unwrap();
+        assert_eq!(bytes, vec![42u8; 8192]);
+        producer.join().unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_updates_use_their_own_manifest_and_reject_other_platform_assets() {
+        assert_eq!(MANIFEST, "qscope-update-macos-arm64.json");
+        let mut value = manifest();
+        let (key, bytes, signature) = signed(&value);
+        let valid = verify(&key, &bytes, &signature).unwrap();
+        assert!(asset(&valid, Install::Cli).is_ok());
+        value["assets"][0]["name"] = "QScope-0.2.0-windows-x64-cli-webui.zip".into();
+        let (key, bytes, signature) = signed(&value);
+        let wrong = verify(&key, &bytes, &signature).unwrap();
+        assert_eq!(
+            asset(&wrong, Install::Cli).unwrap_err().code,
+            "update_asset"
+        );
+    }
 
     fn signed(manifest: &serde_json::Value) -> (String, Vec<u8>, Vec<u8>) {
         let random = ring::rand::SystemRandom::new();
@@ -656,7 +845,12 @@ mod tests {
     }
 
     fn manifest() -> serde_json::Value {
-        serde_json::json!({"schema_version":1,"product":"qscope","version":"0.2.0","notes_url":"https://github.com/sj817/QScope/releases/tag/v0.2.0","assets":[{"kind":"cli","name":"QScope-0.2.0-windows-x64-cli-webui.zip","bytes":10,"sha256":"a".repeat(64)}]})
+        let name = if cfg!(target_os = "macos") {
+            "QScope-0.2.0-macos-arm64-cli-webui.zip"
+        } else {
+            "QScope-0.2.0-windows-x64-cli-webui.zip"
+        };
+        serde_json::json!({"schema_version":1,"product":"qscope","version":"0.2.0","notes_url":"https://github.com/sj817/QScope/releases/tag/v0.2.0","assets":[{"kind":"cli","name":name,"bytes":10,"sha256":"a".repeat(64)}]})
     }
 
     #[test]
@@ -847,7 +1041,7 @@ mod tests {
         let mut value = manifest();
         let directory = root.path().join("updates/0.2.0");
         fs::create_dir_all(&directory).unwrap();
-        let path = directory.join("QScope-0.2.0-windows-x64-cli-webui.zip");
+        let path = directory.join(value["assets"][0]["name"].as_str().unwrap());
         fs::write(&path, b"0123456789").unwrap();
         value["assets"][0]["sha256"] = format!("{:x}", Sha256::digest(b"0123456789")).into();
         let manifest: Manifest = serde_json::from_value(value).unwrap();

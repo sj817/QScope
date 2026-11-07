@@ -9,6 +9,7 @@ const jsonPost = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 const installLabels: Record<string, string> = {
+  app: "macOS 应用",
   installer: "安装版",
   portable: "便携版",
   cli: "仅 CLI",
@@ -74,7 +75,7 @@ function stageText(update: UpdateStatus): string {
     case "installing":
       return "安装程序已启动，QScope 会关闭并在安装后重新打开";
     case "ready":
-      return update.install === "portable"
+      return ["portable", "app"].includes(update.install)
         ? `${update.latest} 已下载并校验，重启后生效`
         : `${update.latest} 已替换，重新运行 qs web 后生效`;
     case "restarting":
@@ -147,7 +148,7 @@ export function UpdatePanel({
   const offered =
     update?.stage === "available" ||
     (update?.stage === "error" && Boolean(update.latest)) ||
-    (update?.stage === "ready" && update.install === "portable");
+    (update?.stage === "ready" && ["portable", "app"].includes(update.install));
   const tasks = useRunningTasks(offered);
   const closing = tasks ? (tasks.qq ? "关闭 QQ 并" : "保存录制并") : "";
   const downloaded = Number(update?.downloaded || "0");
@@ -212,7 +213,8 @@ export function UpdatePanel({
                 ? `${closing}更新到 ${update.latest}`
                 : `下载并安装 ${update.latest}`}
             </button>
-          ) : update?.stage === "ready" && update.install === "portable" ? (
+          ) : update?.stage === "ready" &&
+            ["portable", "app"].includes(update.install) ? (
             <button
               className="primary-button"
               disabled={locked}

@@ -35,6 +35,8 @@ struct Options {
 }
 
 struct Desktop {
+    #[cfg(target_os = "macos")]
+    _ui_lease: fs::File,
     stopped: Arc<AtomicBool>,
     shutdown: Arc<Shutdown>,
     connection: Arc<service::Connection>,
@@ -194,6 +196,8 @@ fn initialize(
         },
     )?;
     let origin = descriptor.endpoint.clone();
+    #[cfg(target_os = "macos")]
+    let ui_lease = runtime::desktop_lease(&data)?;
     let connection = Arc::new(service::Connection::acquire(&data, descriptor)?);
     let address = match options.capture {
         Some(path) => capture_url(&data, &connection.service, &path)?,
@@ -228,6 +232,8 @@ fn initialize(
     let file_data = data.clone();
     let file_app = app.handle().clone();
     app.manage(Desktop {
+        #[cfg(target_os = "macos")]
+        _ui_lease: ui_lease,
         stopped,
         shutdown: Arc::default(),
         connection,

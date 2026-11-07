@@ -285,7 +285,12 @@ fn unsupported_capture_and_updates_refuse_before_backend_or_download_preparation
         assert!(!output.status.success(), "{arguments:?}");
         assert!(output.stdout.is_empty(), "{arguments:?}");
         let error: Value = serde_json::from_slice(&output.stderr).unwrap();
-        assert_eq!(error["code"], "unsupported_platform", "{arguments:?}");
+        let code = if arguments[0] == "update" && qscope_automation::update::supported() {
+            "update_unsupported"
+        } else {
+            "unsupported_platform"
+        };
+        assert_eq!(error["code"], code, "{arguments:?}");
         assert!(
             !data.exists(),
             "Unsupported command created backend or download state: {arguments:?}"
