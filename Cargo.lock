@@ -2998,7 +2998,7 @@ dependencies = [
 
 [[package]]
 name = "qscope-automation"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.4.3",
@@ -3016,7 +3016,7 @@ dependencies = [
 
 [[package]]
 name = "qscope-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -3034,7 +3034,7 @@ dependencies = [
 
 [[package]]
 name = "qscope-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -3044,7 +3044,7 @@ dependencies = [
 
 [[package]]
 name = "qscope-desktop"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "clap",
  "qscope-automation",
@@ -3060,7 +3060,7 @@ dependencies = [
 
 [[package]]
 name = "qscope-qqnt"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "cc",
  "qscope-automation",
@@ -3075,7 +3075,7 @@ dependencies = [
 
 [[package]]
 name = "qscope-qqnt-macos"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "libc",
  "qscope-automation",
@@ -3089,7 +3089,7 @@ dependencies = [
 
 [[package]]
 name = "qscope-web"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "axum",
  "clap",
