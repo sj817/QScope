@@ -117,13 +117,17 @@ pub struct Layout {
 
 impl Layout {
     pub fn development(workspace: &Path) -> Self {
-        let native_root = workspace.join("build/native/qqnt-windows-x64");
+        let native_root = workspace.join(if cfg!(target_os = "macos") {
+            "build/macos-native"
+        } else {
+            "build/native/qqnt-windows-x64"
+        });
         let reference = fs::File::open(native_root.join("current.json"))
             .ok()
             .and_then(|file| serde_json::from_reader::<_, NativeBuild>(file.take(16384)).ok());
         let native = reference
             .filter(|reference| {
-                reference.schema_version == 1
+                reference.schema_version <= 1
                     && reference.build_id.len() == 64
                     && reference
                         .build_id
@@ -145,7 +149,11 @@ impl Layout {
 
     pub fn packaged(resources: PathBuf, storage: PathBuf) -> Self {
         Self {
-            native: Some(resources.join("native")),
+            native: Some(resources.join(if cfg!(target_os = "macos") {
+                "collectors/qqnt-macos"
+            } else {
+                "native"
+            })),
             worker: std::env::current_exe().ok(),
             resources,
             storage,
@@ -153,7 +161,7 @@ impl Layout {
     }
 
     pub fn package(&self) -> PathBuf {
-        self.storage.join("qq/9.9.37-261103-x64")
+        qq_package(&self.storage)
     }
 
     pub fn host(&self) -> Result<PathBuf, Error> {
@@ -164,7 +172,7 @@ impl Layout {
             .ok_or_else(|| {
                 Error::new(
                     "native_host_missing",
-                    "The native QQ host is unavailable. Build the Windows collector first",
+                    "The QScope CLI host is unavailable. Build or reinstall the CLI",
                 )
             })?;
         Ok(path)
@@ -190,8 +198,59 @@ impl Layout {
     }
 }
 
+pub fn qq_package(storage: &Path) -> PathBuf {
+    storage.join(if cfg!(target_os = "macos") {
+        "qq/macos/7.0.3-54395"
+    } else {
+        "qq/9.9.37-261103-x64"
+    })
+}
+
+pub const fn capture_supported() -> bool {
+    cfg!(any(
+        all(windows, target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64")
+    ))
+}
+
+pub const fn probe_resource() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "collectors/qqnt-macos/libqscope_probe.dylib"
+    } else {
+        "native/qscope-portable.dll"
+    }
+}
+
+pub const fn probe_filename(development: bool) -> &'static str {
+    if cfg!(target_os = "macos") {
+        if development {
+            "qscope-probe.dylib"
+        } else {
+            "libqscope_probe.dylib"
+        }
+    } else {
+        "qscope-portable.dll"
+    }
+}
+
+/// Portable state stays outside a signed .app bundle.
+pub fn portable_data(executable: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    if let Some(macos) = executable.parent()
+        && macos.file_name().is_some_and(|name| name == "MacOS")
+        && let Some(contents) = macos.parent()
+        && contents.file_name().is_some_and(|name| name == "Contents")
+        && let Some(bundle) = contents.parent()
+        && bundle.extension().is_some_and(|name| name == "app")
+    {
+        return bundle.with_file_name("data");
+    }
+    executable.with_file_name("data")
+}
+
 #[derive(Deserialize)]
 struct NativeBuild {
+    #[serde(default)]
     schema_version: u32,
     build_id: String,
 }

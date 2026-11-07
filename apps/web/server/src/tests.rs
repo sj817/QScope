@@ -21,7 +21,7 @@ fn header() -> Vec<u8> {
 
 #[test]
 fn sqlite_index_resumes_appends_and_rebuilds_changed_input() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let source = directory.path().join("live.qscap");
     let mut bytes = header();
     for id in 1..=5000 {
@@ -56,7 +56,7 @@ fn sqlite_index_resumes_appends_and_rebuilds_changed_input() {
 
 #[test]
 fn corrupt_sqlite_cache_is_preserved_and_recreated() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     fs::write(directory.path().join("captures-v1.sqlite"), b"broken cache").unwrap();
     let index = index::Store::open(directory.path()).unwrap();
     assert!(index.load("missing").unwrap().is_none());
@@ -99,7 +99,7 @@ fn record(
     bytes
 }
 fn setup() -> (tempfile::TempDir, AppState, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let capture = dir.path().join("sample.qscap");
     let mut bytes = header();
     bytes.extend(record(1, 1, 2, "Test.PB", &[8, 1, 18, 3, 10, 1, 65], 0));
@@ -248,25 +248,71 @@ async fn rust_inspector_relays_both_directions_and_removes_disconnected_targets(
         assert!(packet.iter().all(|byte| *byte == index));
     }
     let _writer = burst.await.unwrap();
-    let replies = tokio::spawn(async move {
-        for index in 0..64u8 {
-            let packet = tokio::time::timeout(std::time::Duration::from_secs(5), reader.next())
+    // Opening the same frontend URL in another tab remains an independent
+    // client, even though the route's client ID is identical.
+    let (mut observer, _) = connect_async(format!("{socket_base}client/viewer?target=fixture"))
+        .await
+        .unwrap();
+    observer
+        .send(Message::Text("observer-ready".into()))
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), target.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_text()
+            .unwrap(),
+        "observer-ready"
+    );
+    let observed = tokio::spawn(async move {
+        for index in 0..128u8 {
+            let packet = tokio::time::timeout(std::time::Duration::from_secs(5), observer.next())
                 .await
                 .unwrap()
                 .unwrap()
                 .unwrap()
                 .into_data();
-            assert_eq!(packet.as_ref(), &[index; 128]);
+            assert_eq!(packet.len(), 512 * 1024);
+            assert!(packet.iter().all(|byte| *byte == index));
         }
+        observer
     });
-    for index in 0..64u8 {
+    let replies = tokio::spawn(async move {
+        for index in 0..128u8 {
+            target
+                .send(Message::Binary(vec![index; 512 * 1024].into()))
+                .await
+                .unwrap();
+        }
         target
-            .send(Message::Binary(vec![index; 128].into()))
+    });
+    // Exceed both the old 16-event broadcast ring and socket buffering before
+    // reading, as a DevTools frontend does while processing its initial DOM.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    for index in 0..128u8 {
+        let packet = tokio::time::timeout(std::time::Duration::from_secs(5), reader.next())
             .await
-            .unwrap();
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .into_data();
+        assert_eq!(packet.len(), 512 * 1024);
+        assert!(packet.iter().all(|byte| *byte == index));
     }
-    replies.await.unwrap();
+    let mut target = replies.await.unwrap();
+    let mut observer = observed.await.unwrap();
     target.close(None).await.unwrap();
+    let closed = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        [reader.next().await, observer.next().await]
+    })
+    .await
+    .unwrap();
+    for closed in closed {
+        assert!(matches!(closed, Some(Ok(Message::Close(_))) | None));
+    }
     for _ in 0..50 {
         if api(state.clone(), &metadata).await.1["targets"] == serde_json::json!([]) {
             break;
@@ -501,7 +547,7 @@ fn comparison_detects_different_unknown_bytes_despite_identical_display_values()
 
 #[test]
 fn recording_window_reopens_without_old_packets_and_preserves_input_and_loss_delta() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let source = directory.path().join("live.qscap");
     let mut original = header();
     original.extend(record(1, 1, 2, "Before", &[8, 1], 3));
@@ -913,8 +959,18 @@ async fn qq_setup_status_is_metadata_only_and_reports_missing_runtime_components
     let (_root, state, _) = setup();
     let (status, body) = api(state, "/api/v1/settings/qq").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["build"], "9.9.37-54395");
-    assert_eq!(body["total"], "334442672");
+    let supported = qscope_automation::runtime::capture_supported();
+    let (build, total) = if !supported {
+        ("", "0")
+    } else if cfg!(target_os = "macos") {
+        ("7.0.3-54395", "487596067")
+    } else {
+        ("9.9.37-54395", "334442672")
+    };
+    assert_eq!(body["build"], build);
+    assert_eq!(body["total"], total);
+    assert_eq!(body["capture_supported"], supported);
+    assert_eq!(body["unavailable_reason"].is_null(), supported);
     assert_eq!(body["available"], false);
     assert_eq!(body["installed"], false);
     assert!(body["pid"].is_null());
@@ -929,18 +985,36 @@ async fn qq_setup_requires_the_cli_worker_and_probe() {
     state.runtime.worker = Some(worker);
     let native = root.path().join("native");
     fs::create_dir(&native).unwrap();
-    fs::write(native.join("qscope-portable.dll"), b"metadata fixture only").unwrap();
+    fs::write(
+        native.join(qscope_automation::runtime::probe_filename(true)),
+        b"metadata fixture only",
+    )
+    .unwrap();
     state.runtime.native = Some(native);
     let (status, body) = api(state.clone(), "/api/v1/settings/qq").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         body["available"],
-        cfg!(all(windows, target_arch = "x86_64"))
+        qscope_automation::runtime::capture_supported()
     );
-    let (status, body) = api(state, "/api/v1/settings/devtools/launch").await;
+    let (status, body) = api(state.clone(), "/api/v1/settings/devtools/launch").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["launch_version"], 3);
     assert!(body["command"].as_str().unwrap().contains("qscope-cli.exe"));
+    // --resources points at a deployed payload without an embedded archive.
+    let deployed = state
+        .runtime
+        .resources
+        .join(qscope_automation::runtime::probe_resource());
+    fs::create_dir_all(deployed.parent().unwrap()).unwrap();
+    fs::write(&deployed, b"metadata fixture only").unwrap();
+    state.runtime.native = Some(deployed.parent().unwrap().into());
+    let (status, body) = api(state, "/api/v1/settings/qq").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["available"],
+        qscope_automation::runtime::capture_supported()
+    );
 }
 
 /// A synthetic launch: own PID and start time, records rewritten to that PID.
@@ -976,7 +1050,7 @@ fn names(page: &serde_json::Value, field: &str) -> Vec<String> {
 
 #[test]
 fn account_is_derived_from_status_records_and_survives_index_restore() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let source = directory.path().join("live.qscap");
     let mut bytes = launch(
         123,
@@ -1016,7 +1090,7 @@ fn account_is_derived_from_status_records_and_survives_index_restore() {
 
 #[test]
 fn unindexed_history_gets_a_bounded_account_look_ahead_once() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let source = directory.path().join("old.qscap");
     fs::write(
         &source,
@@ -1046,7 +1120,7 @@ fn unindexed_history_gets_a_bounded_account_look_ahead_once() {
 
 #[test]
 fn recording_window_inherits_the_account_observed_before_it_started() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let source = directory.path().join("live.qscap");
     let mut original = launch(
         123,
@@ -1233,7 +1307,7 @@ async fn account_view_concatenates_launches_with_original_identities_and_cursors
 
 #[test]
 fn command_suggestions_count_packets_by_frequency_and_skip_control_records() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
     let source = directory.path().join("commands.qscap");
     fs::write(
         &source,
@@ -1344,14 +1418,29 @@ async fn runtime_health_names_what_is_missing_and_how_each_part_can_be_fixed() {
     assert_eq!(status, StatusCode::OK);
     let found = parts(&health);
     assert_eq!(found[1], ("host".into(), "missing".into(), "build".into()));
+    if !qscope_automation::runtime::capture_supported() {
+        assert_eq!(found.len(), 3);
+        assert_eq!(found[0], ("platform".into(), "ok".into(), "none".into()));
+        assert_eq!(
+            found[2],
+            ("probe".into(), "unsupported".into(), "none".into())
+        );
+        assert_eq!(health["healthy"], false);
+        assert_eq!(health["repairable"], false);
+        return;
+    }
     assert_eq!(found[2], ("probe".into(), "missing".into(), "build".into()));
     assert_eq!(found[3], ("qq".into(), "pending".into(), "none".into()));
     assert_eq!(health["healthy"], false);
     assert_eq!(health["repairable"], false);
     // Unpacked QQ files that differ from the pinned modules can be unpacked again.
-    let files = dir
-        .path()
-        .join("artifacts/qq/9.9.37-261103-x64/unpacked/Files");
+    let files = qscope_automation::runtime::qq_package(&dir.path().join("artifacts")).join(
+        if cfg!(target_os = "macos") {
+            "unpacked/QQ.app"
+        } else {
+            "unpacked/Files"
+        },
+    );
     fs::create_dir_all(&files).unwrap();
     fs::write(files.join("QQ.exe"), b"changed").unwrap();
     let (_, health) = api(state.clone(), "/api/v1/settings/qq/health").await;

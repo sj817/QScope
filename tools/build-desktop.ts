@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   cp,
+  chmod,
   copyFile,
   mkdir,
   readdir,
@@ -17,18 +18,23 @@ import { signRelease } from "./release-sign.ts";
 import { command, json, pnpm, sha256, writeJson } from "./build-utils.ts";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const cargoTarget = resolve(
+  process.env.CARGO_TARGET_DIR || join(repo, "target"),
+);
 const target = `${process.platform}-${process.arch}`;
+const mac = process.platform === "darwin" && process.arch === "arm64";
+const cliName = mac ? "qscope-cli" : "qscope-cli.exe";
 const options = new Set(process.argv.slice(2));
 if (options.has("--help")) {
   console.log(
-    "node tools/build-desktop.ts [--prepare | --no-bundle]\nAvailable collector target win32-x64",
+    "node tools/build-desktop.ts [--prepare | --no-bundle]\nTargets: win32-x64 and darwin-arm64 (capture and analysis). --no-bundle omits the installer/DMG.",
   );
   process.exit(0);
 }
 for (const option of options)
   if (!["--prepare", "--no-bundle"].includes(option))
     throw new Error(`Unknown desktop build option ${option}`);
-if (target !== "win32-x64")
+if (target !== "win32-x64" && !mac)
   throw new Error(`Desktop collector adapter is unavailable for ${target}`);
 if (options.has("--prepare") && options.has("--no-bundle"))
   throw new Error("Choose either --prepare or --no-bundle");
@@ -62,11 +68,22 @@ for (const path of [
 }
 
 const releaseEnv = {
-  RUSTFLAGS: [process.env.RUSTFLAGS, "-C target-feature=+crt-static"]
+  CARGO_TARGET_DIR: cargoTarget,
+  RUSTFLAGS: [process.env.RUSTFLAGS, mac ? "" : "-C target-feature=+crt-static"]
     .filter(Boolean)
     .join(" "),
 };
-const native = await buildNative();
+if (mac)
+  await command(process.execPath, [join(repo, "tools/build-native-macos.ts")], {
+    cwd: repo,
+  });
+const native = mac
+  ? (
+      await json<{ output: string }>(
+        join(repo, "build/macos-native/current.json"),
+      )
+    ).output
+  : await buildNative();
 const nativeManifest = await json<NativeManifest>(
   join(native, "manifest.json"),
 );
@@ -84,29 +101,63 @@ await pnpm(["--dir", "apps/web", "run", "build"], repo);
 await pnpm(["--dir", "apps/desktop", "install", "--frozen-lockfile"], repo);
 await buildIcons();
 await cp(join(repo, "apps/web/dist"), join(payload, "ui"), { recursive: true });
-await mkdir(join(payload, "native"));
-for (const file of nativeManifest.outputs.filter(
-  (file) => !file.path.endsWith(".exe"),
-)) {
-  if (file.path !== file.path.split(/[\\/]/).at(-1))
-    throw new Error("Invalid native artifact filename");
-  if ((await sha256(join(native, file.path))) !== file.sha256)
-    throw new Error("Native build output hash changed");
-  await copyFile(join(native, file.path), join(payload, "native", file.path));
+if (mac) {
+  const collector = join(payload, "collectors/qqnt-macos");
+  await mkdir(collector, { recursive: true });
+  const probe = nativeManifest.outputs.find(
+    (entry) => entry.path === "qscope-probe.dylib",
+  );
+  const license = nativeManifest.outputs.find(
+    (entry) => entry.path === "Dobby-LICENSE.txt",
+  );
+  if (!probe || !license) throw new Error("Mac native build is incomplete");
+  for (const entry of [probe, license]) {
+    if ((await sha256(join(native, entry.path))) !== entry.sha256)
+      throw new Error("Mac native output hash changed");
+    await copyFile(
+      join(native, entry.path),
+      join(collector, entry === probe ? "libqscope_probe.dylib" : entry.path),
+    );
+  }
+  await writeJson(join(collector, "native-manifest.json"), {
+    ...nativeManifest,
+    outputs: [probe, license],
+  });
+  await copyFile(
+    join(repo, "collectors/qqnt-macos/bootstrap.cjs"),
+    join(collector, "bootstrap.cjs"),
+  );
+  await copyFile(
+    join(repo, "collectors/qqnt-windows/automation.js"),
+    join(collector, "automation.cjs"),
+  );
+} else {
+  await mkdir(join(payload, "native"));
+  for (const file of nativeManifest.outputs.filter(
+    (file) => !file.path.endsWith(".exe"),
+  )) {
+    if (file.path !== file.path.split(/[\\/]/).at(-1))
+      throw new Error("Invalid native artifact filename");
+    if ((await sha256(join(native, file.path))) !== file.sha256)
+      throw new Error("Native build output hash changed");
+    await copyFile(join(native, file.path), join(payload, "native", file.path));
+  }
+  await writeJson(join(payload, "native/manifest.json"), {
+    ...nativeManifest,
+    outputs: nativeManifest.outputs.filter(
+      (file) => !file.path.endsWith(".exe"),
+    ),
+  });
+  await mkdir(join(payload, "collectors/qqnt-windows"), { recursive: true });
+  await copyFile(
+    join(repo, "tools/qq-portable/client.json"),
+    join(payload, "collectors/qqnt-windows/client.json"),
+  );
+  await copyFile(
+    join(repo, "collectors/qqnt-windows/profile.json"),
+    join(payload, "collectors/qqnt-windows/profile.json"),
+  );
 }
-await writeJson(join(payload, "native/manifest.json"), {
-  ...nativeManifest,
-  outputs: nativeManifest.outputs.filter((file) => !file.path.endsWith(".exe")),
-});
-await mkdir(join(payload, "collectors/qqnt-windows"), { recursive: true });
-await copyFile(
-  join(repo, "tools/qq-portable/client.json"),
-  join(payload, "collectors/qqnt-windows/client.json"),
-);
-await copyFile(
-  join(repo, "collectors/qqnt-windows/profile.json"),
-  join(payload, "collectors/qqnt-windows/profile.json"),
-);
 const devtools = join(payload, "collectors/devtools");
 await mkdir(devtools, { recursive: true });
 await pnpm(
@@ -184,12 +235,13 @@ for (const path of [...new Set(sourceFiles)].sort()) {
 }
 const buildId = sourceHash.digest("hex");
 const productEnv = { ...releaseEnv, QSCOPE_BUILD_ID: buildId };
-const bundledCli = join(build, "qscope-cli.exe");
+const bundledCli = join(build, cliName);
 await command("cargo", ["build", "-p", "qscope-cli", "--release", "--locked"], {
   cwd: repo,
   env: { ...productEnv, QSCOPE_RESOURCES_ARCHIVE: archivePath },
 });
-await copyFile(join(repo, "target/release/qscope-cli.exe"), bundledCli);
+await copyFile(join(cargoTarget, "release", cliName), bundledCli);
+if (mac) await chmod(bundledCli, 0o755);
 await command(
   bundledCli,
   ["--json", "runtime", "--data-dir", join(build, "self-test")],
@@ -209,6 +261,11 @@ const manifest = {
   bundle,
   cli_sha256: cliHash,
   native_build: nativeManifest.build_id,
+  capabilities: {
+    offline_analysis: true,
+    qq_discovery: mac,
+    live_capture: true,
+  },
   files,
 };
 await writeJson(join(build, "manifest.json"), manifest);
@@ -223,6 +280,127 @@ if (options.has("--prepare")) {
   process.exit(0);
 }
 const configuration = join(build, "tauri.bundle.json");
+if (mac) {
+  // externalBin makes Tauri sign the CLI with the same identity as the desktop.
+  const sidecar = join(build, "qscope-cli-aarch64-apple-darwin");
+  await copyFile(bundledCli, sidecar);
+  await chmod(sidecar, 0o755);
+  await writeJson(configuration, {
+    bundle: {
+      icon: ["icons/icon.icns", "icons/128x128.png", "icons/32x32.png"],
+      externalBin: [join(build, "qscope-cli")],
+      macOS: {
+        minimumSystemVersion: "12.0",
+        signingIdentity: process.env.APPLE_SIGNING_IDENTITY || "-",
+      },
+    },
+  });
+  await pnpm(
+    [
+      "--dir",
+      "apps/desktop",
+      "exec",
+      "tauri",
+      "build",
+      "--ci",
+      "--config",
+      configuration,
+      "--bundles",
+      options.has("--no-bundle") ? "app" : "app,dmg",
+      "--",
+      "--locked",
+    ],
+    repo,
+    productEnv,
+  );
+  const builtApp = join(cargoTarget, "release/bundle/macos/QScope.app");
+  const desktopExecutable = join(builtApp, "Contents/MacOS/QScope");
+  const packagedCli = join(builtApp, "Contents/MacOS/qscope-cli");
+  const desktopHash = await sha256(desktopExecutable);
+  const packagedCliHash = await sha256(packagedCli);
+  const releaseId = createHash("sha256")
+    .update(desktopHash)
+    .update(packagedCliHash)
+    .digest("hex")
+    .slice(0, 12);
+  const distribution = join(
+    repo,
+    "dist",
+    `QScope-${version}-macos-arm64-${releaseId}`,
+  );
+  await mkdir(distribution, { recursive: true });
+  const app = join(distribution, "QScope.app");
+  await command("/usr/bin/ditto", [builtApp, app]);
+  const assets: { path: string; bytes: number; sha256: string }[] = [];
+  const archive = join(distribution, `QScope-${version}-macos-arm64.zip`);
+  await command("/usr/bin/ditto", [
+    "-c",
+    "-k",
+    "--sequesterRsrc",
+    "--keepParent",
+    app,
+    archive,
+  ]);
+  const cliDirectory = join(build, "macos-cli");
+  await mkdir(cliDirectory);
+  await copyFile(packagedCli, join(cliDirectory, "qscope-cli"));
+  await chmod(join(cliDirectory, "qscope-cli"), 0o755);
+  const cliArchive = join(
+    distribution,
+    `QScope-${version}-macos-arm64-cli-webui.zip`,
+  );
+  await command("/usr/bin/ditto", ["-c", "-k", cliDirectory, cliArchive]);
+  for (const path of [archive, cliArchive])
+    assets.push({
+      path,
+      bytes: (await stat(path)).size,
+      sha256: await sha256(path),
+    });
+  if (!options.has("--no-bundle")) {
+    const dmgRoot = join(cargoTarget, "release/bundle/dmg");
+    const names = (await readdir(dmgRoot)).filter(
+      (name) => name === `QScope_${version}_aarch64.dmg`,
+    );
+    if (names.length !== 1)
+      throw new Error("Expected one DMG for this version and architecture");
+    const path = join(distribution, `QScope-${version}-macos-arm64.dmg`);
+    await copyFile(join(dmgRoot, names[0]), path);
+    assets.push({
+      path,
+      bytes: (await stat(path)).size,
+      sha256: await sha256(path),
+    });
+  }
+  await writeFile(
+    join(distribution, "SHA256SUMS.txt"),
+    assets
+      .map((asset) => `${asset.sha256}  ${relative(distribution, asset.path)}`)
+      .join("\n") + "\n",
+  );
+  await command("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
+  await writeJson(join(build, "manifest.json"), {
+    ...manifest,
+    release_id: releaseId,
+    desktop_sha256: desktopHash,
+    cli_sha256: packagedCliHash,
+  });
+  await writeJson(join(build, "result.json"), {
+    schema_version: 1,
+    version,
+    target,
+    app,
+    release_id: releaseId,
+    desktop_sha256: desktopHash,
+    cli_sha256: packagedCliHash,
+    assets,
+    capabilities: manifest.capabilities,
+  });
+  await writeJson(join(repo, "build/desktop/current.json"), reference);
+  console.log(
+    `macOS app ${app}\nArtifacts ${distribution}\nOnline updates are not enabled in this macOS build.`,
+  );
+  process.exit(0);
+}
 await writeJson(configuration, {
   bundle: { resources: { [bundledCli]: "qscope-cli.exe" } },
 });
@@ -245,8 +423,8 @@ await pnpm(
   productEnv,
 );
 const desktopExecutable = join(
-  repo,
-  "target/release",
+  cargoTarget,
+  "release",
   configurationSource.mainBinaryName + ".exe",
 );
 const desktopHash = await sha256(desktopExecutable);

@@ -7,6 +7,9 @@ process.env.QSCOPE_E2E_DIR ||= resolve(
   "../../.tmp/webui-e2e",
   randomUUID(),
 );
+const webkit = process.env.QSCOPE_BROWSER
+  ? process.env.QSCOPE_BROWSER === "webkit"
+  : process.platform === "darwin";
 
 export default defineConfig({
   testDir: "./tests",
@@ -16,8 +19,11 @@ export default defineConfig({
   timeout: 30_000,
   use: {
     baseURL: "http://127.0.0.1:19841",
-    browserName: "chromium",
-    channel: process.env.QSCOPE_BROWSER_CHANNEL || "msedge",
+    browserName: webkit ? "webkit" : "chromium",
+    channel: webkit
+      ? undefined
+      : process.env.QSCOPE_BROWSER_CHANNEL ||
+        (process.platform === "win32" ? "msedge" : undefined),
     viewport: { width: 1600, height: 1000 },
     trace: "retain-on-failure",
   },

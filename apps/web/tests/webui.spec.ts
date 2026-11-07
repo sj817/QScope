@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, BrowserContext, Page } from "@playwright/test";
 import { appendFile, readFile, writeFile, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { execFile } from "node:child_process";
@@ -8,6 +8,13 @@ import { promisify } from "node:util";
 import { record, longText, header } from "./fixture.mjs";
 
 const root = process.env.QSCOPE_E2E_DIR!;
+async function grantClipboard(context: BrowserContext) {
+  await context.grantPermissions(
+    context.browser()?.browserType().name() === "webkit"
+      ? ["clipboard-read"]
+      : ["clipboard-read", "clipboard-write"],
+  );
+}
 async function sessionId(request: APIRequestContext, name: string) {
   let id: string | undefined;
   await expect
@@ -603,6 +610,7 @@ test("advanced filters select historical packets and multi-compare three real pa
   const baseline = dialog.getByRole("combobox", { name: "对比基准" });
   await expect(baseline).toContainText("#17");
   await baseline.click();
+  await expect(baseline).toBeFocused();
   await expect(
     dialog.getByRole("listbox", { name: "对比基准" }).getByRole("option"),
   ).toHaveCount(3);
@@ -727,7 +735,7 @@ test("JSON layout, Inter, solid buttons and full Unicode value copying never use
   request,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await grantClipboard(context);
   const id = await sessionId(request, "text.qscap");
   await page.goto(`/?session=${id}`);
   await page
@@ -831,7 +839,7 @@ test("a JSON value opens formatted and colored with exact integers, and the orig
   request,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await grantClipboard(context);
   const name = JSON.stringify('示例 "引号"');
   const raw = `{"id":"demo","seq":18446744073709551615,"ok":true,"none":null,"list":[1,-2.5e3,{"name":${name},"tags":[]}],"empty":{}}`;
   const pretty = [
@@ -935,7 +943,7 @@ test("JSON copying groups repeats without dropping fields and preserves all 64-b
   request,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await grantClipboard(context);
   const id = await sessionId(request, "text.qscap");
   await page.goto(`/?session=${id}`);
   await page
@@ -1048,7 +1056,7 @@ test("settings install each agent into the selected project, copy the universal 
   request,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await grantClipboard(context);
   const id = await sessionId(request, "closed.qscap");
   await page.goto(`/?session=${id}`);
   await page.getByRole("button", { name: "打开设置", exact: true }).click();
@@ -1660,7 +1668,7 @@ test("row context menu works by mouse and keyboard, never changes the detail its
   request,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await grantClipboard(context);
   const id = await sessionId(request, "closed.qscap");
   await page.goto(`/?session=${id}`);
   const list = page.getByRole("listbox", { name: "数据包列表" });
@@ -1729,7 +1737,7 @@ test("checked rows get a batch menu, shift-click selects a range and control eve
   request,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await grantClipboard(context);
   const id = await sessionId(request, "closed.qscap");
   await page.goto(`/?session=${id}`);
   const list = page.getByRole("listbox", { name: "数据包列表" });
@@ -2072,7 +2080,7 @@ test("the detail header spans both columns, names formats in full and copies lab
   request,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await grantClipboard(context);
   const id = await sessionId(request, "closed.qscap");
   await page.goto(`/?session=${id}`);
   const detail = page.getByRole("region", { name: "包详情" });
@@ -2125,7 +2133,7 @@ test("field tree menu explains disabled items, skips them by keyboard and flips 
   request,
   context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await grantClipboard(context);
   const id = await sessionId(request, "closed.qscap");
   await page.goto(`/?session=${id}`);
   await page.getByRole("button", { name: "折叠原始字节" }).click();
@@ -2274,19 +2282,43 @@ test("settings check the runtime with a fix for each part and keep update proxie
   const settings = page.getByRole("dialog", { name: "QScope 设置" });
   // The synthetic workspace has neither a built collector nor a QQ download, so the check opens by itself.
   const runtime = settings.getByLabel("运行环境");
-  // Outside Windows x64 the system itself is one more problem.
-  const problems =
-    process.platform === "win32" && process.arch === "x64" ? 2 : 3;
-  await expect(runtime).toContainText(`${problems} 项需要处理`);
-  await expect(runtime.locator(".runtime-list li")).toHaveCount(4);
-  await expect(runtime.locator("li.bad")).toHaveCount(problems);
-  await expect(runtime).toContainText("node tools/build-native.ts");
+  if (
+    (process.platform === "win32" && process.arch === "x64") ||
+    (process.platform === "darwin" && process.arch === "arm64")
+  ) {
+    await expect(runtime).toContainText("2 项需要处理");
+    await expect(runtime.locator(".runtime-list li")).toHaveCount(4);
+    await expect(runtime.locator("li.bad")).toHaveCount(2);
+    await expect(runtime).toContainText(
+      process.platform === "darwin"
+        ? "node tools/build-native-macos.ts"
+        : "node tools/build-native.ts",
+    );
+  } else {
+    await expect(runtime).toContainText("2 项需要处理");
+    await expect(runtime.locator(".runtime-list li")).toHaveCount(3);
+    await expect(runtime.locator("li.bad")).toHaveCount(2);
+    await expect(runtime).toContainText("可读取与分析抓包文件");
+    await expect(runtime).not.toContainText("node tools/build-native.ts");
+    await expect(
+      settings.getByRole("button", { name: "此平台暂未开放采集" }),
+    ).toBeDisabled();
+    await expect(
+      settings.getByRole("button", { name: "下载并启动 QQ", exact: true }),
+    ).toHaveCount(0);
+    await expect(settings).not.toContainText("54395");
+    await expect(settings).not.toContainText("334442672");
+  }
   await expect(runtime.getByRole("button", { name: "一键修复" })).toHaveCount(
     0,
   );
   await settings.getByRole("tab", { name: /更新/ }).click();
   await expect(page).toHaveURL(/section=update/);
-  await expect(settings).toContainText("开发构建不支持在线更新");
+  await expect(settings).toContainText(
+    process.platform === "win32" && process.arch === "x64"
+      ? "开发构建不支持在线更新"
+      : "在线更新目前只支持 Windows x64",
+  );
   await expect(
     settings.getByRole("button", { name: "检查更新" }),
   ).toBeDisabled();

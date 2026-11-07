@@ -3,7 +3,7 @@
 # QScope
 
 <p align="center">
-  <b>面向 Windows x64 QQ (NT 架构) 的原生协议观测与逆向分析工具</b>
+  <b>QQ (NT 架构) 原生协议观测与分析：Windows x64 与 macOS Apple Silicon</b>
 </p>
 
 <p align="center">
@@ -69,11 +69,32 @@
 > 
 > 支持文件关联：在终端或资源管理器执行 `QScope.exe "D:\captures\example.qscap"` 可直接打开查看，已有窗口会自动接收新记录。
 
+### macOS
+
+当前源码可构建 macOS 12 及以上的 Apple Silicon 版 `QScope.app`、DMG 和独立 CLI。Mac 入口支持下载固定版本 QQ 7.0.3（54395），校验官方包后准备独立研究副本，启动双向 MSF 采集与 Chii 页面调试；同时支持 `.qscap`、PB/TLV/JCE 离线分析和本地 WebUI。原生探针、扫码登录前后流量、Chii 的 DOM/样式/控制台及隔离文件目录已在本机研究副本验证。GitHub Release 的现有 Windows 下载和自动更新不适用于 Mac，Intel Mac 暂无打包适配。
+
+在 Mac 上运行 `node tools/build-desktop.ts` 后，安装文件位于 `dist/QScope-<版本>-macos-arm64-<构建标识>/`。双击 DMG，把窗口里的 `QScope.app` 拖到「应用程序」，再从「应用程序」打开；不需要手动解压。也提供 `.app` 和 ZIP。应用使用系统 WKWebView，运行时不需要 Node、开发工具或 WebView2。默认使用 ad-hoc 签名，未做 Apple 公证，下载到其他机器的首次打开可能受到 Gatekeeper 限制；可用 `APPLE_SIGNING_IDENTITY` 指定自己的签名身份，公证需要另行配置。
+
+在「设置 → QQ 抓包」点击「下载并启动 QQ」，首次下载约 465 MiB。QQ 官方 DMG 只读挂载并解包，不执行系统安装；每个 profile 使用独立的研究 `.app`、HOME 和文件目录。默认接收文件目录是该 profile 下的 `files/`，无需全盘访问权限。启动前会校验系统文件写入限制和子进程继承；不满足隔离条件时拒绝启动。仅固定模块身份的已验证采集布局可以启用，其他版本只提供只读扫描。
+
+```bash
+"/Applications/QScope.app/Contents/MacOS/qscope-cli" qq inspect --app /Applications/QQ.app
+"/Applications/QScope.app/Contents/MacOS/qscope-cli" qq scan --module /path/to/wrapper.node
+"/Applications/QScope.app/Contents/MacOS/qscope-cli" cli install
+# 若安装结果提示 path_setup_required=true，将 ~/.local/bin 加入自己的 PATH
+```
+
+`qq scan` 读取 Mach-O 的 ARM64 切片，通过函数名、日志字符串的独立代码引用及函数边界寻找候选，不按 QQ 版本硬编码 RVA。结果记录模块和切片 SHA256、相对地址、缺失或歧义状态；`hook_ready` 仍为 `false`，调用约定、包体布局和真实采集需独立验证。编译方式或日志字符串变化仍可能使扫描失效，不能据此承诺自动适配所有版本。
+
+`qq inspect` 额外报告版本、签名验证、Hardened Runtime、App Sandbox、动态库加载与调试 entitlement。扫描与检查均不启动 QQ、不修改签名、不申请权限；系统工具无法解释的结果保留为 `unknown` 或 `unverified`。
+
 ---
 
 ## 开始抓包
 
-1. **打开程序**：启动 `QScope.exe`，进入「设置」页面。
+以下流程适用于 Windows x64 和 macOS Apple Silicon。
+
+1. **打开程序**：Windows 启动 `QScope.exe`，Mac 打开 `QScope.app`，进入「设置」页面。
 2. **下载并启动 QQ**：点击「下载并启动 QQ」。工具会自动拉取官方安装包，核验 SHA256 并免安装解包至私有数据目录，以受限沙盒权限拉起客户端。
 3. **手动登录**：在弹出的研究 QQ 窗口中手动扫码登录，随后进行需要观察的操作。
 4. **实时分析**：回到 QScope 即可查看双向原始收发包。可随时开始/停止分段录制，或点击「打开 DevTools」唤起内置页面调试器；用完后在「设置 → QQ 抓包」点击「关闭 QQ」。
@@ -132,6 +153,8 @@ qs --json capture sessions
 
 > **数据路径说明**：默认数据存储于 `%LOCALAPPDATA%\QScope\`，`--portable` 模式使用程序同级的 `data/`。原始 `.qscap` 文件、账号状态、设置和日志均保存在该目录，SQLite 索引可在需要时通过原包完全重建。
 
+Mac 默认使用 `~/Library/Application Support/QScope/`；通过 `open /path/QScope.app --args --portable` 启动时，数据位于 `.app` 外部同级的 `data/`，不会写入已签名的应用包。Mac 的 `cli install` 安装同一个 CLI 为 `~/.local/bin/qs`，报告当前 PATH 是否可用，不修改 shell 配置文件。
+
 ---
 
 ## 开箱即用的核心体验
@@ -180,7 +203,7 @@ flowchart TD
     end
 
     subgraph Host ["采集宿主与探针"]
-        NativeHost["NativeAOT 便携宿主 (tools/qq-portable)"]
+        NativeHost["CLI 内嵌 Rust 采集宿主 (collectors/qqnt-windows/host-rs)"]
         CppProbe["C++ MSF-NG 被动探针 (collectors/qqnt-windows)"]
         DevToolsBridge["Chii 页面调试服务 (collectors/devtools)"]
     end
@@ -196,6 +219,7 @@ flowchart TD
     CLI --> Server
     Server --> Engine
     CLI --> Engine
+    CLI --> NativeHost
 
     NativeHost -->|环境隔离与启动注入| QQApp
     CppProbe -->|原始 MSF-NG Hook 写入 .qscap| Engine
@@ -219,10 +243,11 @@ flowchart TD
 
 | 项目 | 当前状态与说明 |
 | :--- | :--- |
-| **适配 QQ 版本** | Windows x64 `9.9.37-54395`，由工具自动下载并准备 |
+| **适配 QQ 版本** | Windows x64 `9.9.37-54395`；macOS Apple Silicon `7.0.3-54395`，由工具自动下载并准备 |
+| **macOS 分发** | `.app`、DMG 和 CLI；当前未公证，其他机器的首次打开及不同系统版本仍需独立验证；不支持在线更新 |
 | **采集范围** | MSF-NG 协议收发边界及生命周期记录 |
 | **HTTP/HTTPS 上传** | 完整采集仍在开发中，当前存在漏采通路 |
-| **中文输入法** | 便携沙盒副本暂时禁用系统 TSF/IME，输入法组合输入暂不可用 |
+| **Windows 中文输入法** | 便携沙盒副本暂时禁用系统 TSF/IME，输入法组合输入暂不可用 |
 | **外部已有进程热附加** | 待实现（目前必须由启动器在启动阶段挂载探针） |
 | **Schema 编辑与导出** | 待实现（当前为 Wire 级无 Schema 候选解释，不自动生成真实 `.proto`） |
 
@@ -234,14 +259,14 @@ flowchart TD
 
 ## 开发
 
-需要 Windows x64、Rust `1.97.0`（由 `rust-toolchain.toml` 固定）、Node `24.22.1` 与 pnpm `9.15.9`；打包另需 MSVC x64 和 Windows SDK。依赖版本由各 lockfile 固定。
+需要 Rust `1.97.0`（由 `rust-toolchain.toml` 固定）、Node `24.22.1` 与 pnpm `9.15.9`。Windows x64 打包另需 MSVC x64 和 Windows SDK；Mac 打包需要 Apple Silicon Mac 和 Xcode Command Line Tools。依赖版本由各 lockfile 固定。
 
 ```bash
 pnpm install --frozen-lockfile                                         # 根目录：ESLint、Prettier、tools 类型
 pnpm --dir apps/web install --frozen-lockfile                          # WebUI
 pnpm --dir collectors/devtools install --frozen-lockfile --ignore-scripts  # Chii 页面调试资源
 node tools/webui.ts            # 构建并启动开发 WebUI；--fresh 查看首次启动流程
-node tools/build-desktop.ts    # 构建桌面端、CLI、便携包与安装器
+node tools/build-desktop.ts    # 构建本机平台桌面端、CLI 与安装包；--no-bundle 省略安装器/DMG
 ```
 
 提交前的检查与 CI 一致：
@@ -257,6 +282,12 @@ pnpm --dir apps/web run build
 cargo build -p qscope-web -p qscope-cli --locked && pnpm --dir apps/web test
 ```
 
-浏览器测试和截图只使用合成数据。
+浏览器测试和截图只使用合成数据。Windows 测试使用 Edge，Mac 测试使用 WebKit；Mac 首次运行测试前用 `pnpm --dir apps/web exec playwright install webkit` 安装 lockfile 对应的浏览器。`QSCOPE_BROWSER` 可显式选择 `webkit` 或 `chromium`。
+
+Mac 打包完成后可运行 `node apps/cli/tests/packaged-macos.ts`，验证 DMG 内的应用和「应用程序」拖拽入口、ZIP 解压后的签名和执行权限，以及中文路径、空 PATH 下的独立 CLI、嵌入资源和合成抓包后台。此检查不启动 QQ，不能替代真实采集验收。
+
+Mac ARM64 原生探针的开发检查为 `node tools/build-native-macos.ts` 和 `node tools/test-native-macos.ts`。前者校验固定版本的 CMake、Dobby 源包并构建有界内存读取与 `.qscap` 写入组件；后者使用合成模块验证插桩、非法指针、截断、结束标记和原函数行为，均不启动 QQ。真实采集仍需单独验证客户端身份、研究副本权限及数据隔离，不能仅凭扫描候选自动启用探针。
+
+Mac 研究副本的 `collectors/qqnt-macos/bootstrap.cjs` 在 QQ 原入口前初始化隔离目录（文件下载默认为 profile 下的 `files/`），并复用现有认证控制桥；由同一个 `qscope-cli` 的原生 worker 提供隔离环境和采集身份。`node --test collectors/qqnt-macos/bootstrap_test.cjs` 使用模拟 Electron API 检查路径、进程身份和入口加载顺序，不启动 QQ。已有 profile 中显式保存的不可访问目录仍需在 QQ「设置 → 存储管理」中改为该 profile 的 `files/`。
 
 发版时先确认 Cargo、Tauri 与各 `package.json` 的版本号一致，再推送 `v<版本>` tag：`.github/workflows/release.yml` 会构建安装器、便携包与 CLI，用 `QSCOPE_RELEASE_SIGNING_KEY` 签名更新清单并发布 Release。手动运行该 workflow 只构建并上传 artifact，不发布。

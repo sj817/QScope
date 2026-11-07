@@ -226,7 +226,9 @@ impl Resources {
 
     fn native(&self) -> impl Iterator<Item = &Entry> {
         self.files.values().filter(|entry| {
-            entry.path.starts_with("native/") || entry.path.starts_with("collectors/qqnt-windows/")
+            entry.path.starts_with("native/")
+                || entry.path.starts_with("collectors/qqnt-windows/")
+                || entry.path.starts_with("collectors/qqnt-macos/")
         })
     }
 
@@ -289,7 +291,7 @@ mod tests {
     fn resources_are_read_on_demand_and_cache_changes_are_rejected() {
         let resources =
             Resources::embedded(fixture("native/test.dll", b"sample", b"sample")).unwrap();
-        let data = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         assert!(!resources.root(data.path()).exists());
         assert_eq!(resources.read("native/test.dll", 32).unwrap(), b"sample");
         assert!(!resources.root(data.path()).exists());
@@ -308,7 +310,7 @@ mod tests {
     fn native_files_report_changes_and_repair_writes_them_again() {
         let resources =
             Resources::embedded(fixture("native/test.dll", b"sample", b"sample")).unwrap();
-        let data = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let check = resources.check_native(data.path()).unwrap();
         assert!(!check.written);
         assert_eq!(check.missing, ["native/test.dll"]);

@@ -78,18 +78,21 @@ fn user_path() -> Result<String, Error> {
 
 #[cfg(not(windows))]
 fn user_path() -> Result<String, Error> {
-    Err(Error::new(
-        "unsupported_platform",
-        "Global command registration currently supports Windows",
-    ))
+    Ok(std::env::var("PATH").unwrap_or_default())
 }
 
 fn path_matches(value: &str, directory: &Path) -> bool {
-    value
-        .trim()
-        .trim_matches('"')
-        .trim_end_matches(['/', '\\'])
-        .eq_ignore_ascii_case(&directory.to_string_lossy())
+    let normalized = value.trim().trim_matches('"').trim_end_matches(['/', '\\']);
+    if cfg!(windows) {
+        normalized.eq_ignore_ascii_case(&directory.to_string_lossy())
+    } else {
+        normalized == directory.to_string_lossy()
+    }
+}
+
+fn registered(directory: &Path) -> Result<bool, Error> {
+    Ok(std::env::split_paths(&user_path()?)
+        .any(|entry| path_matches(&entry.to_string_lossy(), directory)))
 }
 
 #[cfg(windows)]
@@ -126,7 +129,8 @@ fn update_path(directory: &Path, install: bool) -> Result<(), Error> {
 
 #[cfg(not(windows))]
 fn update_path(_directory: &Path, _install: bool) -> Result<(), Error> {
-    user_path().map(|_| ())
+    // Shell startup files belong to the user. Report when PATH needs an explicit adjustment.
+    Ok(())
 }
 
 pub fn run(options: Options) -> Result<(), Error> {
@@ -171,7 +175,11 @@ pub fn run(options: Options) -> Result<(), Error> {
         .as_ref()
         .and_then(|value| value["target"].as_str())
         .is_some_and(|target| {
-            display_path(Path::new(target)).eq_ignore_ascii_case(&display_path(&source))
+            if cfg!(windows) {
+                display_path(Path::new(target)).eq_ignore_ascii_case(&display_path(&source))
+            } else {
+                Path::new(target) == source
+            }
         });
     // Replacing the registered source in place also updates its hard links.
     let owned = hash.as_ref().is_some_and(|hash| {
@@ -186,9 +194,7 @@ pub fn run(options: Options) -> Result<(), Error> {
         );
     }
     if matches!(options.command, Command::Status) {
-        let registered = user_path()?
-            .split(';')
-            .any(|value| path_matches(value, &directory));
+        let registered = registered(&directory)?;
         return crate::print_json(
             &json!({"schema_version":1,"command":"qs","path":executable,"installed":owned && registered,"owned":owned,"in_user_path":registered}),
         );
@@ -218,12 +224,11 @@ pub fn run(options: Options) -> Result<(), Error> {
         }
         return crate::print_json(&json!({"schema_version":1,"installed":false,"command":"qs"}));
     }
-    let path_added = previous
-        .as_ref()
-        .is_some_and(|value| value["path_added"] == true)
-        || !user_path()?
-            .split(';')
-            .any(|value| path_matches(value, &directory));
+    let path_added = cfg!(windows)
+        && (previous
+            .as_ref()
+            .is_some_and(|value| value["path_added"] == true)
+            || !registered(&directory)?);
     // Persist intent first. A retry can recognize both sides of an interrupted update.
     let mut value = json!({"schema_version":1,"owner":"qscope-global-command","target":source,"sha256":hash.as_ref().unwrap_or(&desired),"pending_sha256":desired,"path_added":path_added,"version":env!("CARGO_PKG_VERSION")});
     save(&ownership, &value)?;
@@ -256,6 +261,6 @@ pub fn run(options: Options) -> Result<(), Error> {
         .remove("pending_sha256");
     save(&ownership, &value)?;
     crate::print_json(
-        &json!({"schema_version":1,"installed":true,"command":"qs","path":executable,"open_new_terminal":true}),
+        &json!({"schema_version":1,"installed":true,"command":"qs","path":executable,"open_new_terminal":cfg!(windows),"in_user_path":registered(&directory)?,"path_directory":directory,"path_setup_required":!cfg!(windows) && !registered(&directory)?}),
     )
 }

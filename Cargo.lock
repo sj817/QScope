@@ -3024,6 +3024,7 @@ dependencies = [
  "qscope-automation",
  "qscope-core",
  "qscope-qqnt",
+ "qscope-qqnt-macos",
  "qscope-web",
  "serde_json",
  "tempfile",
@@ -3073,6 +3074,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "qscope-qqnt-macos"
+version = "0.1.1"
+dependencies = [
+ "libc",
+ "qscope-automation",
+ "qscope-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "qscope-web"
 version = "0.1.1"
 dependencies = [
@@ -3083,6 +3098,7 @@ dependencies = [
  "qscope-automation",
  "qscope-core",
  "qscope-qqnt",
+ "qscope-qqnt-macos",
  "rusqlite",
  "serde",
  "serde_json",

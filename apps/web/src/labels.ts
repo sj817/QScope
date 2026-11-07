@@ -2,7 +2,7 @@ import type { ApiError, Session } from "./api.generated";
 
 // One-line explanations for terms a first-time user meets in the workspace.
 export const terms = {
-  pid: "PID：Windows 给这次 QQ 进程分配的编号，每次启动都不同，用来区分同一账号的多次启动。",
+  pid: "PID：操作系统给这次 QQ 进程分配的编号，结合进程出生标识区分不同启动，编号可能被复用。",
   seq: "SEQ：QQ 为每个请求分配的序号，可以在搜索框里精确查找。",
   dropped:
     "丢弃：采集队列来不及写入、没有记录下来的包数量。不为 0 时这份记录不完整。",

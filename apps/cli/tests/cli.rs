@@ -35,7 +35,7 @@ fn web_command_serves_the_local_api_and_uses_the_same_data_lease_as_desktop() {
             }
         }
     }
-    let root = tempfile::tempdir().unwrap();
+    let root = temporary_directory();
     let resources = root.path().join("resources");
     fs::create_dir_all(resources.join("ui")).unwrap();
     fs::write(
@@ -71,7 +71,8 @@ fn web_command_serves_the_local_api_and_uses_the_same_data_lease_as_desktop() {
     while !descriptor.is_file() {
         assert!(
             server.0.try_wait().unwrap().is_none(),
-            "WebUI exited before publishing its service"
+            "WebUI exited before publishing its service: {}",
+            fs::read_to_string(data.join("logs/service.err.log")).unwrap_or_default()
         );
         assert!(Instant::now() < deadline, "WebUI startup deadline");
         thread::sleep(Duration::from_millis(50));
@@ -111,7 +112,7 @@ fn web_command_serves_the_local_api_and_uses_the_same_data_lease_as_desktop() {
 
 #[test]
 fn agent_cli_installs_each_skill_and_exposes_a_usable_generic_prompt() {
-    let root = tempfile::tempdir().unwrap();
+    let root = temporary_directory();
     let project = root.path().join("project with spaces");
     fs::create_dir(&project).unwrap();
     for (agent, directory) in [
@@ -224,9 +225,156 @@ fn path(path: &Path) -> &str {
     path.to_str().unwrap()
 }
 
+fn temporary_directory() -> tempfile::TempDir {
+    // macOS exposes its temporary directory through /var, which aliases /private/var.
+    // Product data paths reject symlink traversal, so use the physical parent in tests too.
+    tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap()
+}
+
+#[test]
+fn invalid_macho_discovery_fails_without_starting_a_backend() {
+    let root = temporary_directory();
+    let module = root.path().join("bad module.node");
+    let data = root.path().join("unused data");
+    let source = b"synthetic invalid Mach-O";
+    fs::write(&module, source).unwrap();
+    let output = cli(&[
+        "--json",
+        "--data-dir",
+        path(&data),
+        "qq",
+        "scan",
+        "--module",
+        path(&module),
+    ]);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["code"], "macho");
+    assert_eq!(fs::read(&module).unwrap(), source);
+    assert!(!data.exists(), "Offline discovery created runtime state");
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn unsupported_capture_and_updates_refuse_before_backend_or_download_preparation() {
+    let root = temporary_directory();
+    for (index, arguments) in [
+        vec!["qq", "prepare", "--installer", "missing-installer.exe"],
+        vec!["qq", "start"],
+        vec!["update", "--check"],
+        vec![
+            "update",
+            "--yes",
+            "--close-tasks",
+            "--proxy",
+            "invalid-proxy",
+        ],
+    ]
+    .iter()
+    .enumerate()
+    {
+        if arguments[0] == "qq" && qscope_automation::runtime::capture_supported() {
+            continue;
+        }
+        let data = root.path().join(format!("unused-{index}"));
+        let mut all = vec!["--json", "--data-dir", path(&data)];
+        all.extend_from_slice(arguments);
+        let output = cli(&all);
+        assert!(!output.status.success(), "{arguments:?}");
+        assert!(output.stdout.is_empty(), "{arguments:?}");
+        let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["code"], "unsupported_platform", "{arguments:?}");
+        assert!(
+            !data.exists(),
+            "Unsupported command created backend or download state: {arguments:?}"
+        );
+    }
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn unix_qs_install_status_and_uninstall_use_only_the_selected_directory_and_child_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temporary_directory();
+    let directory = root.path().join("command bin with spaces");
+    let executable = directory.join("qs");
+    let ownership = directory.join(".qs-command.json");
+    let data = root.path().join("unused data");
+    let scoped_path = std::env::join_paths([&directory]).unwrap();
+    let command = |arguments: &[&str], in_path: bool| {
+        Command::new(env!("CARGO_BIN_EXE_qscope-cli"))
+            .args([
+                "--json",
+                "--data-dir",
+                path(&data),
+                "cli",
+                "--directory",
+                path(&directory),
+            ])
+            .args(arguments)
+            .env(
+                "PATH",
+                if in_path {
+                    scoped_path.as_os_str()
+                } else {
+                    std::ffi::OsStr::new("")
+                },
+            )
+            .output()
+            .unwrap()
+    };
+    assert_eq!(json(&command(&["status"], false))["installed"], false);
+    assert!(!directory.exists());
+    let installed = json(&command(&["install"], false));
+    assert_eq!(installed["installed"], true);
+    assert_eq!(installed["in_user_path"], false);
+    assert_eq!(installed["path_setup_required"], true);
+    assert_eq!(installed["open_new_terminal"], false);
+    assert_eq!(installed["path"], path(&executable));
+    assert!(fs::symlink_metadata(&executable).unwrap().is_file());
+    assert_ne!(
+        fs::metadata(&executable).unwrap().permissions().mode() & 0o111,
+        0
+    );
+    assert!(ownership.is_file());
+
+    let outside = json(&command(&["status"], false));
+    assert_eq!(outside["owned"], true);
+    assert_eq!(outside["installed"], false);
+    assert_eq!(outside["in_user_path"], false);
+    let registered = json(&command(&["status"], true));
+    assert_eq!(registered["owned"], true);
+    assert_eq!(registered["installed"], true);
+    assert_eq!(registered["in_user_path"], true);
+
+    let decoded = Command::new("qs")
+        .args(["--json", "decode", "--hex", "0801"])
+        .env("PATH", &scoped_path)
+        .output()
+        .unwrap();
+    assert_eq!(
+        json(&decoded)["message"]["fields"][0]["value"]["unsigned"],
+        "1"
+    );
+    assert_eq!(
+        json(&command(&["uninstall", "--if-owned"], true))["installed"],
+        false
+    );
+    assert!(!executable.exists());
+    assert!(!ownership.exists());
+    let removed = json(&command(&["status"], true));
+    assert_eq!(removed["installed"], false);
+    assert_eq!(removed["owned"], false);
+    assert!(!data.exists(), "Command registration started a backend");
+}
+
 #[test]
 fn import_inspect_record_and_decode_preserve_the_same_raw_payload() {
-    let root = tempfile::tempdir().unwrap();
+    let root = temporary_directory();
     let capture = root.path().join("session.jsonl");
     let recorded = root.path().join("recorded.jsonl");
     let saved = json(&cli(&[
@@ -283,7 +431,7 @@ fn import_inspect_record_and_decode_preserve_the_same_raw_payload() {
 
 #[test]
 fn existing_outputs_and_failed_streams_are_never_published_over_evidence() {
-    let root = tempfile::tempdir().unwrap();
+    let root = temporary_directory();
     let output = root.path().join("existing.jsonl");
     fs::write(&output, b"keep original").unwrap();
     let failed = cli(&["--json", "import", "--hex", "0801", "--out", path(&output)]);
@@ -324,7 +472,7 @@ fn partial_wire_errors_are_usable_json_and_nonzero_exit() {
 
 #[test]
 fn an_interrupted_capture_or_bad_hash_cannot_be_imported_as_complete() {
-    let root = tempfile::tempdir().unwrap();
+    let root = temporary_directory();
     let capture = root.path().join("session.jsonl");
     json(&cli(&["import", "--hex", "0801", "--out", path(&capture)]));
     let source = fs::read_to_string(&capture).unwrap();
@@ -415,7 +563,7 @@ fn live_queries_leave_out_heartbeats_and_the_background_seen_before_an_action() 
             let _ = self.0.wait();
         }
     }
-    let root = tempfile::tempdir().unwrap();
+    let root = temporary_directory();
     let (resources, captures, data) = (
         root.path().join("resources"),
         root.path().join("captures"),
@@ -464,7 +612,11 @@ fn live_queries_leave_out_heartbeats_and_the_background_seen_before_an_action() 
     let mut server = Server(command.spawn().unwrap(), descriptor.clone());
     let deadline = Instant::now() + Duration::from_secs(15);
     while !descriptor.is_file() {
-        assert!(server.0.try_wait().unwrap().is_none(), "backend exited");
+        assert!(
+            server.0.try_wait().unwrap().is_none(),
+            "backend exited: {}",
+            fs::read_to_string(data.join("logs/service.err.log")).unwrap_or_default()
+        );
         assert!(Instant::now() < deadline, "backend startup deadline");
         std::thread::sleep(Duration::from_millis(50));
     }

@@ -4,13 +4,13 @@ use std::path::Path;
 
 #[derive(Default, Clone)]
 pub struct Probe {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     entries: std::collections::HashMap<String, Cached>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     host: Option<std::path::PathBuf>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 #[derive(Clone)]
 struct Cached {
     birth: String,
@@ -18,7 +18,7 @@ struct Cached {
     checked: std::time::Instant,
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 #[derive(serde::Deserialize)]
 struct Observed {
     id: String,
@@ -27,7 +27,7 @@ struct Observed {
     missing: bool,
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 fn alive(expected_birth: &str, observed: &Observed) -> Option<bool> {
     if observed.missing {
         return Some(false);
@@ -42,14 +42,14 @@ fn alive(expected_birth: &str, observed: &Observed) -> Option<bool> {
 
 impl Probe {
     pub fn new(layout: &qscope_automation::runtime::Layout) -> Self {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             Self {
                 entries: Default::default(),
                 host: layout.host().ok(),
             }
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             let _ = layout;
             Self::default()
@@ -70,7 +70,7 @@ impl Probe {
                 "capture".into()
             };
             session.producer_alive = None;
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             if session.source_kind == "capture" {
                 session.producer_alive = self
                     .entries
@@ -83,7 +83,7 @@ impl Probe {
 
     /// A producer QScope has just seen exit, such as a research copy it closed.
     pub fn exited(&mut self, id: &str, birth: &str) {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         self.entries.insert(
             id.into(),
             Cached {
@@ -92,18 +92,18 @@ impl Probe {
                 checked: std::time::Instant::now(),
             },
         );
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         let _ = (id, birth);
     }
 
     pub async fn annotate(&mut self, sessions: &mut [Session], imports: &Path) {
         self.annotate_cached(sessions, imports);
-        #[cfg(windows)]
-        self.windows(sessions).await;
+        #[cfg(any(windows, target_os = "macos"))]
+        self.native(sessions).await;
     }
 
-    #[cfg(windows)]
-    async fn windows(&mut self, sessions: &mut [Session]) {
+    #[cfg(any(windows, target_os = "macos"))]
+    async fn native(&mut self, sessions: &mut [Session]) {
         let Some(host) = &self.host else {
             return;
         };
@@ -136,16 +136,17 @@ impl Probe {
             .collect();
         if !requests.is_empty() {
             let query = async {
-                let mut child = tokio::process::Command::new(host)
+                let mut command = tokio::process::Command::new(host);
+                command
                     .arg("__collector")
                     .arg("identify")
-                    .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::null())
-                    .kill_on_drop(true)
-                    .spawn()
-                    .ok()?;
+                    .kill_on_drop(true);
+                #[cfg(windows)]
+                command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+                let mut child = command.spawn().ok()?;
                 let mut stdin = child.stdin.take()?;
                 stdin
                     .write_all(&serde_json::to_vec(&requests).ok()?)

@@ -4,6 +4,11 @@ use crate::{
     control, lock_error,
 };
 use axum::{Json, extract::State};
+use qscope_automation::runtime;
+#[cfg(not(target_os = "macos"))]
+use qscope_qqnt as collector;
+#[cfg(target_os = "macos")]
+use qscope_qqnt_macos as collector;
 use serde_json::{Value, json};
 use std::{
     io::Read,
@@ -50,30 +55,65 @@ fn read_progress(path: &Path) -> Option<Value> {
 
 // The probe comes from the build's native directory (a development build) or the embedded
 // resources (a release), which are written to the data directory on launch.
+fn local_probe(state: &AppState) -> Option<PathBuf> {
+    let deployed = state.runtime.resources.join(runtime::probe_resource());
+    if deployed.is_file() {
+        Some(deployed)
+    } else {
+        state
+            .runtime
+            .native
+            .as_ref()
+            .map(|native| native.join(runtime::probe_filename(true)))
+    }
+}
+
 fn probe_source(state: &AppState) -> bool {
-    state
-        .runtime
-        .native
-        .as_ref()
-        .is_some_and(|native| native.join("qscope-portable.dll").is_file())
+    local_probe(state).is_some_and(|path| path.is_file())
         || state
             .assets
             .as_ref()
-            .is_some_and(|assets| assets.contains("native/qscope-portable.dll"))
+            .is_some_and(|assets| assets.contains(runtime::probe_resource()))
+}
+
+fn client_directory(root: &Path) -> PathBuf {
+    root.join(if cfg!(target_os = "macos") {
+        "unpacked/QQ.app"
+    } else {
+        "unpacked/Files"
+    })
 }
 
 fn snapshot(state: &AppState) -> Result<QQSetup, ApiError> {
-    let identity: Value =
-        serde_json::from_str(include_str!("../../../../tools/qq-portable/client.json"))
-            .map_err(|error| ApiError::new("setup", error.to_string()))?;
+    let identity = collector::package::identity()?;
     let root = state.runtime.package();
     let manager = state.onboarding.lock().map_err(|_| lock_error())?;
+    let supported = runtime::capture_supported();
     let mut status = QQSetup {
-        build: identity["build"].as_str().unwrap_or_default().into(),
-        installed: root.join("unpacked/Files/versions/config.json").is_file(),
-        available: cfg!(all(windows, target_arch = "x86_64"))
-            && state.runtime.host().is_ok()
-            && probe_source(state),
+        platform: if cfg!(target_os = "macos") {
+            format!("macOS {}", std::env::consts::ARCH)
+        } else if supported {
+            "Windows x64".into()
+        } else {
+            format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
+        },
+        capture_supported: supported,
+        unavailable_reason: (!supported)
+            .then(|| "此平台尚未提供 QQ 采集器，可打开与分析已有抓包文件。".into()),
+        build: if supported {
+            identity.build.clone()
+        } else {
+            String::new()
+        },
+        installed: supported
+            && client_directory(&root)
+                .join(if cfg!(target_os = "macos") {
+                    "Contents/Info.plist"
+                } else {
+                    "versions/config.json"
+                })
+                .is_file(),
+        available: supported && state.runtime.host().is_ok() && probe_source(state),
         stage: if manager.busy { "preparing" } else { "idle" }.into(),
         message: if manager.busy {
             "正在准备 QQ"
@@ -82,7 +122,11 @@ fn snapshot(state: &AppState) -> Result<QQSetup, ApiError> {
         }
         .into(),
         downloaded: "0".into(),
-        total: identity["installer_bytes"].to_string(),
+        total: if supported {
+            identity.installer_bytes.to_string()
+        } else {
+            "0".into()
+        },
         pid: None,
         session_id: None,
         error: manager.error.clone(),
@@ -204,8 +248,14 @@ pub async fn start(
     }
     if !current.available {
         return Err(ApiError::new(
-            "setup_missing",
-            "QQ 运行组件不完整，请在设置中运行环境检查并修复",
+            if current.capture_supported {
+                "setup_missing"
+            } else {
+                "unsupported_platform"
+            },
+            current
+                .unavailable_reason
+                .unwrap_or_else(|| "QQ 运行组件不完整，请在设置中运行环境检查并修复".into()),
         ));
     }
     spawn_prepare(&state, request)?;
@@ -255,12 +305,14 @@ fn component(
 fn platform() -> RuntimeComponent {
     if cfg!(all(windows, target_arch = "x86_64")) {
         component("platform", "系统", "ok", "Windows x64", "none")
+    } else if runtime::capture_supported() {
+        component("platform", "系统", "ok", "macOS Apple Silicon", "none")
     } else {
         component(
             "platform",
             "系统",
             "unsupported",
-            "QQ 采集只支持 Windows x64",
+            "QQ 采集支持 Windows x64 与 macOS Apple Silicon",
             "none",
         )
     }
@@ -279,7 +331,7 @@ fn host(state: &AppState) -> RuntimeComponent {
             "host",
             "QScope CLI",
             "missing",
-            "安装目录缺少 qscope-cli.exe，需要重新安装 QScope",
+            "安装目录缺少 QScope CLI，需要重新安装 QScope",
             "reinstall",
         ),
         Err(_) => component(
@@ -295,12 +347,7 @@ fn host(state: &AppState) -> RuntimeComponent {
 fn probe(state: &AppState) -> RuntimeComponent {
     const LABEL: &str = "采集探针";
     let Some(assets) = &state.assets else {
-        return match state
-            .runtime
-            .native
-            .as_ref()
-            .map(|native| native.join("qscope-portable.dll"))
-        {
+        return match local_probe(state) {
             Some(path) if path.is_file() => component(
                 "probe",
                 LABEL,
@@ -312,12 +359,16 @@ fn probe(state: &AppState) -> RuntimeComponent {
                 "probe",
                 LABEL,
                 "missing",
-                "开发构建还没有编译采集器，运行 node tools/build-native.ts 后重新检查",
+                if cfg!(target_os = "macos") {
+                    "开发构建还没有编译采集器，运行 node tools/build-native-macos.ts 后重新检查"
+                } else {
+                    "开发构建还没有编译采集器，运行 node tools/build-native.ts 后重新检查"
+                },
                 "build",
             ),
         };
     };
-    if !assets.contains("native/qscope-portable.dll") {
+    if !assets.contains(runtime::probe_resource()) {
         return component(
             "probe",
             LABEL,
@@ -361,18 +412,20 @@ fn probe(state: &AppState) -> RuntimeComponent {
     }
 }
 
-fn installer_name(identity: &qscope_qqnt::package::Identity) -> Option<String> {
+fn installer_name(identity: &collector::package::Identity) -> Option<String> {
     identity
         .installer_url
         .rsplit('/')
         .next()
-        .filter(|name| name.ends_with(".exe") && !name.contains(['\\', ':']))
+        .filter(|name| {
+            (name.ends_with(".exe") || name.ends_with(".dmg")) && !name.contains(['\\', ':'])
+        })
         .map(str::to_string)
 }
 
 fn package(state: &AppState) -> RuntimeComponent {
     const LABEL: &str = "QQ 客户端";
-    let identity = match qscope_qqnt::package::identity() {
+    let identity = match collector::package::identity() {
         Ok(identity) => identity,
         Err(error) => return component("qq", LABEL, "damaged", error.message, "reinstall"),
     };
@@ -387,12 +440,16 @@ fn package(state: &AppState) -> RuntimeComponent {
             if downloaded {
                 "官方安装包已下载，首次启动时解包"
             } else {
-                "首次启动时下载官方安装包（约 319 MiB）并校验"
+                if cfg!(target_os = "macos") {
+                    "首次启动时下载官方安装包（约 465 MiB）并校验"
+                } else {
+                    "首次启动时下载官方安装包（约 319 MiB）并校验"
+                }
             },
             "none",
         );
     }
-    match qscope_qqnt::package::verify_client(&unpacked.join("Files"), &identity) {
+    match collector::package::verify_client(&client_directory(&root), &identity) {
         Ok(()) => component(
             "qq",
             LABEL,
@@ -411,6 +468,34 @@ fn package(state: &AppState) -> RuntimeComponent {
 }
 
 fn inspect(state: &AppState) -> RuntimeHealth {
+    if !runtime::capture_supported() {
+        return RuntimeHealth {
+            components: vec![
+                component(
+                    "platform",
+                    "离线分析",
+                    "ok",
+                    format!(
+                        "{} {} · 可读取与分析抓包文件",
+                        std::env::consts::OS,
+                        std::env::consts::ARCH
+                    ),
+                    "none",
+                ),
+                host(state),
+                component(
+                    "probe",
+                    "QQ 采集",
+                    "unsupported",
+                    "此平台的探针与研究副本隔离尚未验证，重新安装或授予权限不会启用采集",
+                    "none",
+                ),
+            ],
+            healthy: false,
+            repairable: false,
+            preparing: false,
+        };
+    }
     let components = vec![platform(), host(state), probe(state), package(state)];
     RuntimeHealth {
         healthy: components
@@ -426,7 +511,11 @@ pub async fn health(State(state): State<AppState>) -> Result<Json<RuntimeHealth>
     blocking(move || Ok(Json(inspect(&state)))).await
 }
 
-const SECURITY_HINT: &str = "写入后又被移除，通常是安全软件拦截了采集探针。请在 Windows 安全中心的「保护历史记录」中还原，并把 QScope 数据目录加入排除项后再修复。";
+const SECURITY_HINT: &str = if cfg!(target_os = "macos") {
+    "采集组件未能恢复，请检查 QScope 数据目录的写入权限及系统提示后重试。"
+} else {
+    "写入后又被移除，通常是安全软件拦截了采集探针。请在 Windows 安全中心的「保护历史记录」中还原，并把 QScope 数据目录加入排除项后再修复。"
+};
 
 /// Fixes what can be fixed in place: rewrites the collector files from the bundle, and removes
 /// damaged QQ files so the official installer is checked and unpacked again.
@@ -458,7 +547,7 @@ pub async fn repair(State(state): State<AppState>) -> Result<Json<RuntimeHealth>
             std::thread::sleep(std::time::Duration::from_millis(1500));
         }
         if fix_package {
-            let identity = qscope_qqnt::package::identity()?;
+            let identity = collector::package::identity()?;
             let root = task.runtime.package();
             let unpacked = root.join("unpacked");
             qscope_automation::runtime::no_links(&unpacked)?;
@@ -474,7 +563,7 @@ pub async fn repair(State(state): State<AppState>) -> Result<Json<RuntimeHealth>
                 if installer.is_file()
                     && (std::fs::metadata(&installer).map_err(io)?.len()
                         != identity.installer_bytes
-                        || qscope_qqnt::package::file_sha256(&installer)?
+                        || collector::package::file_sha256(&installer)?
                             != identity.installer_sha256)
                 {
                     std::fs::remove_file(&installer).map_err(io)?;
@@ -529,7 +618,7 @@ async fn prepare(state: &AppState, request: SetupRequest) -> Result<(), ApiError
     let status = progress.clone();
     let cancelled = state.stopping.clone();
     blocking(move || {
-        qscope_qqnt::prepare::run(&package, &status, request.installer.as_deref(), &cancelled)
+        collector::prepare::run(&package, &status, request.installer.as_deref(), &cancelled)
             .map_err(Into::into)
     })
     .await?;

@@ -8,7 +8,7 @@ publish.workspace = true
 [features]
 custom-protocol = ["tauri/custom-protocol"]
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "common-controls-v6"] }
 tauri-plugin-single-instance = "=2.5.5"
 tauri-plugin-opener = "=2.7.2"
@@ -19,7 +19,7 @@ serde_json.workspace = true
 tempfile.workspace = true
 sha2.workspace = true
 
-[target.'cfg(windows)'.build-dependencies]
+[target.'cfg(any(windows, target_os = "macos"))'.build-dependencies]
 tauri-build = { version = "=2.7.4", features = [] }
 
 [lints]

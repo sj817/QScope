@@ -30,7 +30,7 @@ export type DevtoolsLaunch = { launch_version: number, profile: string, endpoint
 
 export type DevtoolsFrontend = { opened: boolean, frontend_url: string, frontend: string, };
 
-export type QQSetup = { build: string, installed: boolean, available: boolean, stage: string, message: string, downloaded: string, total: string, pid: number | null, session_id: string | null, error: string | null, };
+export type QQSetup = { platform: string, capture_supported: boolean, unavailable_reason: string | null, build: string, installed: boolean, available: boolean, stage: string, message: string, downloaded: string, total: string, pid: number | null, session_id: string | null, error: string | null, };
 
 export type RuntimeComponent = { 
 /**
