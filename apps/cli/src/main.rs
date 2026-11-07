@@ -439,12 +439,27 @@ fn record(input: impl BufRead, out: &Path) -> Result<serde_json::Value, Error> {
 }
 
 fn run(cli: Cli) -> Result<(), Error> {
+    // Sandbox entry points must not touch user settings or update state before exec.
+    if let Command::Collector { arguments } = cli.command {
+        #[cfg(windows)]
+        return print_json(&qscope_qqnt::worker::dispatch(arguments)?);
+        #[cfg(target_os = "macos")]
+        return print_json(&qscope_qqnt_macos::worker::dispatch(arguments)?);
+        #[cfg(not(any(windows, target_os = "macos")))]
+        {
+            let _ = arguments;
+            return Err(Error::new(
+                "unsupported_platform",
+                "The QQ collector requires Windows x64 or macOS Apple Silicon",
+            ));
+        }
+    }
     if let Some(data) = cli.data_dir {
         qscope_automation::runtime::set_data_directory(data)?;
     } else if cli.portable {
-        qscope_automation::runtime::set_data_directory(
-            std::env::current_exe()?.with_file_name("data"),
-        )?;
+        qscope_automation::runtime::set_data_directory(qscope_automation::runtime::portable_data(
+            &std::env::current_exe()?,
+        ))?;
     }
     // Executables an earlier update moved aside go once nothing runs them.
     if let Ok((_, directory)) = qscope_automation::update::locate() {
@@ -462,23 +477,16 @@ fn run(cli: Cli) -> Result<(), Error> {
             let data = qscope_automation::runtime::user_data()?;
             let service = qscope_automation::service::connect(&data).ok();
             let resources = resources::embedded().ok();
+            #[cfg(target_os = "macos")]
+            let identity = qscope_qqnt_macos::package::identity()?;
+            #[cfg(not(target_os = "macos"))]
+            let identity = qscope_qqnt::package::identity()?;
             print_json(
-                &serde_json::json!({"schema_version":1,"version":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"data_directory":data,"cli":std::env::current_exe()?,"backend":service.map(|service|serde_json::json!({"pid":service.pid,"endpoint":service.endpoint,"version":service.version})),"embedded_webui":resources.as_ref().is_some_and(|resources|resources.contains("ui/index.html")),"embedded_devtools":resources.as_ref().is_some_and(|resources|resources.contains("collectors/devtools/node_modules/chii/public/target.js")),"embedded_probe":resources.as_ref().is_some_and(|resources|resources.contains("native/qscope-portable.dll")),"qq_build":"9.9.37-54395","live_capture_supported":cfg!(all(windows,target_arch="x86_64")),"http_capture_complete":false,"hot_attach_supported":false}),
+                &serde_json::json!({"schema_version":1,"version":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"data_directory":data,"cli":std::env::current_exe()?,"backend":service.map(|service|serde_json::json!({"pid":service.pid,"endpoint":service.endpoint,"version":service.version})),"embedded_webui":resources.as_ref().is_some_and(|resources|resources.contains("ui/index.html")),"embedded_devtools":resources.as_ref().is_some_and(|resources|resources.contains("collectors/devtools/node_modules/chii/public/target.js")),"embedded_probe":resources.as_ref().is_some_and(|resources|resources.contains(qscope_automation::runtime::probe_resource())),"qq_build":qscope_automation::runtime::capture_supported().then_some(identity.build),"offline_analysis_supported":true,"qq_discovery_targets":["macos-arm64"],"live_capture_supported":qscope_automation::runtime::capture_supported(),"http_capture_complete":false,"hot_attach_supported":false}),
             )?;
         }
         Command::Qq(options) => qq::run(options)?,
-        Command::Collector { arguments } => {
-            #[cfg(windows)]
-            print_json(&qscope_qqnt::worker::dispatch(arguments)?)?;
-            #[cfg(not(windows))]
-            {
-                let _ = arguments;
-                return Err(Error::new(
-                    "unsupported_platform",
-                    "The QQ collector requires Windows x64",
-                ));
-            }
-        }
+        Command::Collector { .. } => unreachable!("Collector is dispatched before runtime setup"),
         Command::Cli(options) => command_path::run(options)?,
         Command::Engine { config } => web::backend(config)?,
         Command::Service(args) => web::manage(args)?,

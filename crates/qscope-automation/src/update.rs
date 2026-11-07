@@ -782,7 +782,7 @@ mod tests {
 
     #[test]
     fn install_types_follow_the_files_beside_the_product() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let directory = root.path().join("QScope");
         fs::create_dir(&directory).unwrap();
         assert_eq!(classify(&directory), Install::Cli);
@@ -798,7 +798,7 @@ mod tests {
 
     #[test]
     fn packages_replace_running_files_by_renaming_and_roll_back_on_failure() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let product = root.path().join("product");
         fs::create_dir(&product).unwrap();
         fs::write(product.join("QScope.exe"), b"old desktop").unwrap();
@@ -843,7 +843,7 @@ mod tests {
 
     #[test]
     fn downloads_reuse_only_a_package_that_matches_the_manifest() {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let mut value = manifest();
         let directory = root.path().join("updates/0.2.0");
         fs::create_dir_all(&directory).unwrap();

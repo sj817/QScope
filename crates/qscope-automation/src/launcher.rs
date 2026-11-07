@@ -160,10 +160,10 @@ pub fn launch(
         ));
     }
     check_cancelled(cancelled)?;
-    if !cfg!(all(windows, target_arch = "x86_64")) {
+    if !runtime::capture_supported() {
         return Err(Error::new(
             "platform",
-            "The QQ collector currently requires Windows x64",
+            "The QQ collector requires Windows x64 or macOS Apple Silicon",
         ));
     }
     let host = Path::new(&specification.host_path).canonicalize()?;
@@ -340,6 +340,15 @@ pub fn stop(log_directory: &Path, connection_file: &Path, profile: &str) -> Resu
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    let exit = read_json(&owner.join("exit.json"))?;
+    if exit["exit_code"] != 0 {
+        return Err(Error::new(
+            "qq_stop",
+            exit["message"].as_str().unwrap_or(
+                "The research owner could not finish cleanly; inspect the original capture",
+            ),
+        ));
+    }
     Ok(json!({
         "schema_version": 1,
         "profile": profile,
@@ -365,54 +374,68 @@ mod tests {
     #[test]
     fn stop_asks_only_the_owner_of_the_live_research_copy() {
         use std::{io::Write, net::TcpListener};
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let info = json!({"version":1,"pid":4242,"birth_filetime":"134000000000000001","build":"synthetic","endpoint":endpoint}).to_string();
-        let bridge = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut headers = Vec::new();
-            while !headers.ends_with(b"\r\n\r\n") {
-                let mut byte = [0];
-                stream.read_exact(&mut byte).unwrap();
-                headers.push(byte[0]);
+        for exit_code in [0, 1] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let info = json!({"version":1,"pid":4242,"birth_filetime":"134000000000000001","build":"synthetic","endpoint":endpoint}).to_string();
+            let bridge = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut headers = Vec::new();
+                while !headers.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    headers.push(byte[0]);
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{info}",
+                    info.len()
+                )
+                .unwrap();
+            });
+            let root = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+            let connection = root.path().join("devtools.json");
+            fs::write(&connection, json!({"schema_version":1,"pid":4242,"birth_filetime":"134000000000000001","endpoint":endpoint,"ready":true,"token":"a".repeat(64)}).to_string()).unwrap();
+            let launches = root.path().join("launches");
+            let receipt = |name: &str, pid: u32| {
+                let directory = launches.join(name);
+                fs::create_dir_all(&directory).unwrap();
+                fs::write(directory.join("manifest.json"), json!({"kind":"qscope-research-launcher","profile":"automation","pid":pid,"process_birth_filetime":"134000000000000001"}).to_string()).unwrap();
+                directory
+            };
+            let (owner, earlier) = (receipt("launch-live", 4242), receipt("launch-old", 4141));
+            fs::write(launches.join(".launcher.lock"), b"").unwrap();
+            let exit = owner.clone();
+            let simulated = std::thread::spawn(move || {
+                while !exit.join("stop").is_file() {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                fs::write(
+                    exit.join("exit.json"),
+                    json!({"exit_code":exit_code,"message":"synthetic incomplete footer"})
+                        .to_string(),
+                )
+                .unwrap();
+            });
+            let result = stop(&launches, &connection, "automation");
+            if exit_code == 0 {
+                let stopped = result.unwrap();
+                assert_eq!(stopped["pid"], 4242);
+                assert_eq!(stopped["birth_filetime"], "134000000000000001");
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!(error.code, "qq_stop");
+                assert_eq!(error.message, "synthetic incomplete footer");
             }
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{info}",
-                info.len()
-            )
-            .unwrap();
-        });
-        let root = tempfile::tempdir().unwrap();
-        let connection = root.path().join("devtools.json");
-        fs::write(&connection, json!({"schema_version":1,"pid":4242,"birth_filetime":"134000000000000001","endpoint":endpoint,"ready":true,"token":"a".repeat(64)}).to_string()).unwrap();
-        let launches = root.path().join("launches");
-        let receipt = |name: &str, pid: u32| {
-            let directory = launches.join(name);
-            fs::create_dir_all(&directory).unwrap();
-            fs::write(directory.join("manifest.json"), json!({"kind":"qscope-research-launcher","profile":"automation","pid":pid,"process_birth_filetime":"134000000000000001"}).to_string()).unwrap();
-            directory
-        };
-        let (owner, earlier) = (receipt("launch-live", 4242), receipt("launch-old", 4141));
-        fs::write(launches.join(".launcher.lock"), b"").unwrap();
-        let exit = owner.clone();
-        let simulated = std::thread::spawn(move || {
-            while !exit.join("stop").is_file() {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            fs::write(exit.join("exit.json"), b"{}").unwrap();
-        });
-        let stopped = stop(&launches, &connection, "automation").unwrap();
-        assert_eq!(stopped["pid"], 4242);
-        assert_eq!(stopped["birth_filetime"], "134000000000000001");
-        assert!(!earlier.join("stop").exists());
-        simulated.join().unwrap();
-        bridge.join().unwrap();
+            assert!(!earlier.join("stop").exists());
+            simulated.join().unwrap();
+            bridge.join().unwrap();
+        }
     }
 
     #[test]
     fn pending_launch_stops_only_unfinished_runs() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let mut pending = PendingLaunch {
             host: Path::new("unused"),
             directory: directory.path().into(),

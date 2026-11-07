@@ -28,6 +28,9 @@ pub struct DevtoolsFrontend {
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct QQSetup {
+    pub platform: String,
+    pub capture_supported: bool,
+    pub unavailable_reason: Option<String>,
     pub build: String,
     pub installed: bool,
     pub available: bool,

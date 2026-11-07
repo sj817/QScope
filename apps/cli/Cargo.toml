@@ -17,6 +17,7 @@ qscope-core.workspace = true
 qscope-automation = { workspace = true, features = ["update"] }
 qscope-web = { path = "../web/server" }
 qscope-qqnt = { path = "../../collectors/qqnt-windows/host-rs" }
+qscope-qqnt-macos = { path = "../../collectors/qqnt-macos" }
 serde_json.workspace = true
 tempfile.workspace = true
 tokio = { version = "=1.54.1", features = ["rt-multi-thread", "signal"] }

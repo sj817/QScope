@@ -18,6 +18,21 @@
     "active": true,
     "targets": [],
     "icon": ["icons/icon.ico", "icons/32x32.png", "icons/128x128.png"],
+    "fileAssociations": [
+      {
+        "ext": ["qscap"],
+        "name": "QScope Capture",
+        "description": "QScope 原始协议抓包",
+        "mimeType": "application/x-qscope-capture",
+        "exportedType": {
+          "identifier": "io.github.sj817.qscope.capture",
+          "conformsTo": ["public.data"]
+        },
+        "role": "Viewer",
+        "rank": "Alternate"
+      }
+    ],
+    "macOS": { "minimumSystemVersion": "11.0" },
     "windows": { "webviewInstallMode": { "type": "skip" } }
   }
 }

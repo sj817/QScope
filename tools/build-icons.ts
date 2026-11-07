@@ -24,7 +24,12 @@ export async function buildIcons(): Promise<void> {
     repo,
   );
   await mkdir(destination, { recursive: true });
-  for (const name of ["icon.ico", "32x32.png", "128x128.png"])
+  for (const name of [
+    "icon.ico",
+    "32x32.png",
+    "128x128.png",
+    ...(process.platform === "darwin" ? ["icon.icns"] : []),
+  ])
     await copyFile(join(output, name), join(destination, name));
   console.log(`App icons generated from ${source}`);
 }

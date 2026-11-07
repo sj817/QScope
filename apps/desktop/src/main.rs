@@ -1,11 +1,15 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-#[cfg(windows)]
-mod windows;
+#[cfg(any(windows, target_os = "macos"))]
+mod desktop;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(any(windows, target_os = "macos"))]
+mod platform;
 
 fn main() {
-    #[cfg(windows)]
-    windows::run();
-    #[cfg(not(windows))]
-    eprintln!("QScope Desktop currently targets Windows x64.");
+    #[cfg(any(windows, target_os = "macos"))]
+    desktop::run();
+    #[cfg(not(any(windows, target_os = "macos")))]
+    eprintln!("QScope Desktop currently supports Windows and macOS.");
 }

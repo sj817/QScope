@@ -60,6 +60,9 @@ export function RuntimeCheck({
   }, [attention]);
   const problems = health?.components.filter((item) => !good(item)) || [];
   const reinstall = problems.some((item) => item.repair === "reinstall");
+  const unsupported =
+    problems.length > 0 &&
+    problems.every((item) => item.state === "unsupported");
   return (
     <div
       className={`runtime-check ${problems.length ? "attention" : health ? "" : "unchecked"}`}
@@ -79,9 +82,11 @@ export function RuntimeCheck({
                 ? "正在修复…"
                 : !health
                   ? "检查 QScope CLI、采集探针和 QQ 文件"
-                  : problems.length
-                    ? `${problems.length} 项需要处理`
-                    : "全部正常"}
+                  : unsupported
+                    ? "此平台采集适配中"
+                    : problems.length
+                      ? `${problems.length} 项需要处理`
+                      : "全部正常"}
           </span>
         </span>
         <span className="runtime-actions">

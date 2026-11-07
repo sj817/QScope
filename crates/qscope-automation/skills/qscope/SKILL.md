@@ -50,7 +50,7 @@ PowerShell 直接使用 `{{POWERSHELL_CLI}}`，Bash / Git Bash 直接使用 `{{B
 
 1. 核对用户这次授权的范围：能否启动研究 QQ、由谁登录、允许哪些界面动作和业务操作。范围之外的动作先询问。
 2. 运行 `doctor` 查看资源与能力，再运行 `qq status`。`stage` 为 `running` 时，`pid` 是当前研究 QQ，`session_id` 是它的抓包会话；`preparing`、`downloading` 等表示正在准备，`error` 附带原因。
-3. 还没有运行且用户同意时执行 `qq start`。首次启动会下载官方安装包（约 319 MiB），并校验和解包，可能需要几分钟。命令在研究 QQ 就绪后返回 `pid`、`birth_filetime`。后台尚未启动时，CLI 会按需启动它；只有需要常驻时才执行 `service start`。
+3. 还没有运行且用户同意时执行 `qq start`。首次启动会下载官方安装包（Windows x64 约 319 MiB，macOS Apple Silicon 约 465 MiB），并校验和解包，可能需要几分钟。命令在研究 QQ 就绪后返回 `pid`、`birth_filetime`。后台尚未启动时，CLI 会按需启动它；只有需要常驻时才执行 `service start`。
 4. 研究 QQ 显示登录界面后，请用户自己扫码或输入账号登录。不要代为登录，也不要读取、导出或改写票据、密钥、设备标识。用户确认登录后再继续，`capture sessions` 里该会话的 `account` 会出现观察到的账号。
 5. 结束时用 `qq stop` 关闭你自己启动的研究 QQ，它的抓包会写入结束标记。用户在桌面端或 WebUI 启动的 QQ 由用户决定是否关闭。
 

@@ -146,6 +146,14 @@ fn stop_backend(data: &Path) -> Result<bool, Error> {
 }
 
 pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
+    if !cfg!(all(windows, target_arch = "x86_64"))
+        && !matches!(options.command, Some(UpdateCommand::Config { .. }))
+    {
+        return Err(Error::new(
+            "unsupported_platform",
+            "Online updates are not enabled for this platform. Install a matching platform package manually.",
+        ));
+    }
     let data = runtime::user_data()?;
     let mut settings = update::load(&data)?;
     match options.command {

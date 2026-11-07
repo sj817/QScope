@@ -1,4 +1,4 @@
 fn main() {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     tauri_build::build();
 }

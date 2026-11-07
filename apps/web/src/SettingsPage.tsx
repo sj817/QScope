@@ -312,17 +312,20 @@ export function SettingsPage({
   }
   const busy = starting || Boolean(qq && busyStages.has(qq.stage));
   const running = qq?.stage === "running";
+  const unsupported = qq?.capture_supported === false;
   const downloaded = Number(qq?.downloaded || "0");
   const total = Number(qq?.total || "1");
-  const qqState = running
-    ? "正在采集"
-    : busy
-      ? "正在准备"
-      : !qq
-        ? "正在读取"
-        : qq.installed
-          ? "未运行"
-          : "未下载";
+  const qqState = unsupported
+    ? "采集适配中"
+    : running
+      ? "正在采集"
+      : busy
+        ? "正在准备"
+        : !qq
+          ? "正在读取"
+          : qq.installed
+            ? "未运行"
+            : "未下载";
   const attention =
     settings?.targets.filter(
       (t) => t.state === "update_available" || t.state === "conflict",
@@ -439,8 +442,9 @@ export function SettingsPage({
               <div>
                 <h3 id="qq-settings-title">QQ 抓包</h3>
                 <p>
-                  用独立数据目录运行官方
-                  QQ，登录和业务操作的收发包会实时进入抓包列表。
+                  {unsupported
+                    ? qq.unavailable_reason
+                    : "用独立数据目录运行官方 QQ，登录和业务操作的收发包会实时进入抓包列表。"}
                 </p>
               </div>
               <span
@@ -456,14 +460,16 @@ export function SettingsPage({
                   <Icon name="packet" size={20} />
                 </span>
                 <div className="qq-card-text">
-                  <strong>QQ {qq?.build || "9.9.37-54395"}</strong>
+                  <strong>{qq?.build ? `QQ ${qq.build}` : "QQ"}</strong>
                   <span>
-                    Windows x64 ·{" "}
-                    {running && qq?.pid
-                      ? `PID ${qq.pid}`
-                      : qq?.installed
-                        ? "已解包，可直接启动"
-                        : "首次启动会先下载官方安装包"}
+                    {qq?.platform || "正在读取平台"} ·{" "}
+                    {unsupported
+                      ? "可分析已有抓包文件"
+                      : running && qq?.pid
+                        ? `PID ${qq.pid}`
+                        : qq?.installed
+                          ? "已解包，可直接启动"
+                          : "首次启动会先下载官方安装包"}
                   </span>
                 </div>
               </div>
@@ -501,6 +507,8 @@ export function SettingsPage({
                       <span className="small-spinner" aria-hidden="true" />
                       {qq?.message || "正在准备 QQ"}
                     </>
+                  ) : unsupported ? (
+                    "此平台暂未开放采集"
                   ) : running ? (
                     "查看当前抓包"
                   ) : qq?.installed ? (
@@ -537,23 +545,33 @@ export function SettingsPage({
               onReinstall={() => open("update")}
             />
 
-            <h4 className="pane-subhead">流程</h4>
-            <ol className="qq-steps">
-              {steps.map((step, index) => (
-                <li
-                  key={step.title}
-                  className={step.done ? "done" : step.active ? "active" : ""}
-                >
-                  <span className="qq-step-mark" aria-hidden="true">
-                    {step.done ? <Icon name="check" size={12} /> : index + 1}
-                  </span>
-                  <div>
-                    <strong>{step.title}</strong>
-                    <span>{step.detail}</span>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            {!unsupported && (
+              <>
+                <h4 className="pane-subhead">流程</h4>
+                <ol className="qq-steps">
+                  {steps.map((step, index) => (
+                    <li
+                      key={step.title}
+                      className={
+                        step.done ? "done" : step.active ? "active" : ""
+                      }
+                    >
+                      <span className="qq-step-mark" aria-hidden="true">
+                        {step.done ? (
+                          <Icon name="check" size={12} />
+                        ) : (
+                          index + 1
+                        )}
+                      </span>
+                      <div>
+                        <strong>{step.title}</strong>
+                        <span>{step.detail}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </>
+            )}
           </section>
         ) : section === "update" ? (
           <UpdatePanel update={update} onChange={onUpdate} notify={notify} />

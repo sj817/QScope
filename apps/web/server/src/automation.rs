@@ -271,12 +271,21 @@ fn launch_specification(
         .join("portable/profiles")
         .join(&profile)
         .join(".qscope/devtools.json");
-    let command = format!(
-        "& '{}' --json devtools --server '{}' launch --profile '{}' --port {port}",
-        qscope_automation::display_path(&state.automation.cli).replace('\'', "''"),
-        state.automation.server_url.replace('\'', "''"),
-        profile
-    );
+    let command = if cfg!(windows) {
+        format!(
+            "& '{}' --json devtools --server '{}' launch --profile '{}' --port {port}",
+            qscope_automation::display_path(&state.automation.cli).replace('\'', "''"),
+            state.automation.server_url.replace('\'', "''"),
+            profile
+        )
+    } else {
+        format!(
+            "'{}' --json devtools --server '{}' launch --profile '{}' --port {port}",
+            qscope_automation::display_path(&state.automation.cli).replace('\'', "'\\''"),
+            state.automation.server_url.replace('\'', "'\\''"),
+            profile,
+        )
+    };
     Ok(contract::DevtoolsLaunch {
         launch_version: 3,
         profile,

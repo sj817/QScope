@@ -15,6 +15,20 @@ pub struct Options {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Locate ARM64 MSF candidates in a local Mac QQ module without starting or modifying QQ.
+    Scan {
+        /// Inspect this Mach-O module instead of QQ.app/Contents/Resources/app/wrapper.node.
+        #[arg(long, conflicts_with = "app")]
+        module: Option<PathBuf>,
+        /// Read-only source app bundle; defaults to /Applications/QQ.app.
+        #[arg(long)]
+        app: Option<PathBuf>,
+    },
+    /// Inspect Mac QQ signing, entitlements and ARM64 capture candidates without launching it.
+    Inspect {
+        #[arg(long, default_value = "/Applications/QQ.app")]
+        app: PathBuf,
+    },
     /// Download, verify and unpack the official QQ package without starting it.
     Prepare {
         /// Use an already downloaded official installer instead of downloading it.
@@ -40,6 +54,25 @@ enum Command {
 }
 
 pub fn run(options: Options) -> Result<(), Error> {
+    if let Command::Inspect { app } = &options.command {
+        return crate::print_json(&serde_json::to_value(qscope_qqnt_macos::inspect::inspect(
+            app,
+        )?)?);
+    }
+    if let Command::Scan { module, app } = &options.command {
+        let path = module.clone().unwrap_or_else(|| {
+            app.clone()
+                .unwrap_or_else(|| PathBuf::from("/Applications/QQ.app"))
+                .join("Contents/Resources/app/wrapper.node")
+        });
+        return crate::print_json(&serde_json::to_value(qscope_qqnt_macos::scan(&path)?)?);
+    }
+    if !runtime::capture_supported() && !matches!(options.command, Command::Status) {
+        return Err(Error::new(
+            "unsupported_platform",
+            "Live QQ capture requires Windows x64 or macOS Apple Silicon. Offline analysis remains available.",
+        ));
+    }
     if let Command::Stop { profile } = &options.command {
         return stop(profile);
     }
@@ -67,10 +100,12 @@ pub fn run(options: Options) -> Result<(), Error> {
         }
         Command::Status => return crate::print_json(&client.get("/api/v1/settings/qq", &[])?),
         Command::Stop { .. } => unreachable!("handled above"),
+        Command::Scan { .. } => unreachable!("handled above"),
+        Command::Inspect { .. } => unreachable!("handled above"),
     };
     qscope_automation::launcher::validate_profile(&profile, port)?;
-    let expected = runtime::user_data()?
-        .join("qq/9.9.37-261103-x64/portable/profiles")
+    let expected = runtime::qq_package(&runtime::user_data()?)
+        .join("portable/profiles")
         .join(&profile)
         .join(".qscope/devtools.json");
     client.post(
@@ -109,8 +144,8 @@ pub fn run(options: Options) -> Result<(), Error> {
 
 fn stop(profile: &str) -> Result<(), Error> {
     let data = runtime::user_data()?;
-    let connection_file = data
-        .join("qq/9.9.37-261103-x64/portable/profiles")
+    let connection_file = runtime::qq_package(&data)
+        .join("portable/profiles")
         .join(profile)
         .join(".qscope/devtools.json");
     let stopped = qscope_automation::launcher::stop(

@@ -81,7 +81,12 @@ function Picker<T extends string | number>({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-activedescendant={open ? `${id}-${active}` : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={(event) => {
+          // WebKit on macOS does not focus buttons on a pointer click. The combobox
+          // owns keyboard navigation, so opening it must move focus here explicitly.
+          event.currentTarget.focus();
+          setOpen((value) => !value);
+        }}
         onKeyDown={onKeyDown}
       >
         <span>{options[current]?.[1]}</span>

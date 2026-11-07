@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/qscope-core", "crates/qscope-automation", "apps/cli", "apps/web/server", "apps/desktop", "collectors/qqnt-windows/host-rs"]
+members = ["crates/qscope-core", "crates/qscope-automation", "apps/cli", "apps/web/server", "apps/desktop", "collectors/qqnt-windows/host-rs", "collectors/qqnt-macos"]
 resolver = "3"
 
 [workspace.package]
