@@ -33,8 +33,7 @@ fn rules(value: &str) -> impl Iterator<Item = &str> {
         .filter(|s| !s.is_empty())
 }
 
-// A bounded command matcher, no regex execution: '=' marks an exact name, '*' and '?'
-// make a whole-name glob, and anything else matches as a substring.
+// 有界命令匹配器支持 = 精确名称、* 和 ? 全名通配符，以及普通子串。
 fn matches(pattern: &str, text: &str) -> bool {
     if let Some(exact) = pattern.strip_prefix('=') {
         return text == exact;
@@ -69,7 +68,7 @@ fn matches(pattern: &str, text: &str) -> bool {
 impl Filter {
     pub fn validate(&self) -> Result<(), ApiError> {
         for value in [&self.include, &self.exclude].into_iter().flatten() {
-            // Room for a baseline of background commands, each as an exact rule.
+            // 为背景命令基线预留空间，每个命令占一条精确规则。
             if value.len() > 16 * 1024
                 || rules(value).count() > 256
                 || rules(value).any(|s| s.len() > 128)

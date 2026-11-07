@@ -1,8 +1,7 @@
 #pragma once
 #include <cstdint>
 
-// QSCAP01 wire format, shared with the existing native reader and Windows probe.
-// Timestamps retain FILETIME units on every producer platform.
+// QSCAP01 线格式与原生读取器及 Windows 探针共用，各平台时间戳统一使用 FILETIME 单位。
 namespace qscope::macos {
 #pragma pack(push, 1)
 struct Header {

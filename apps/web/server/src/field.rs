@@ -1,4 +1,4 @@
-//! Human-readable projections. Raw capture ranges and wire types remain authoritative.
+//! 人类可读投影以原始抓包范围和线类型为依据。
 use crate::contract::{ApiError, FieldNode, FieldText, PacketDetail};
 use serde::Deserialize;
 
@@ -106,7 +106,7 @@ fn json_object(nodes: &[FieldNode], payload: &[u8], depth: usize) -> Result<Stri
     if depth > 64 {
         return Err(ApiError::new("range", "结构深度超过上限"));
     }
-    // Keep first appearance order and all repeated occurrences; never overwrite duplicate keys.
+    // 保留首次出现顺序及全部重复项，重复键分别记录。
     let mut groups = Vec::<(&str, Vec<&FieldNode>)>::new();
     for node in nodes {
         let key = node.presentation.key.as_str();

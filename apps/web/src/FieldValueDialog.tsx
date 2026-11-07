@@ -10,7 +10,7 @@ import { useWindow } from "./views";
 const LINE = 20;
 const PAD = 6;
 
-// Formatted JSON in a virtual list: line numbers, indent guides and the field tree's colors.
+// 格式化 JSON 使用虚拟列表，并复用字段树的行号、缩进线和配色。
 function JsonReader({ lines }: { lines: JsonLine[] }) {
   const scroll = useRef<HTMLDivElement>(null);
   const { start, end } = useWindow(scroll, LINE, lines.length);
@@ -99,7 +99,7 @@ export function FieldValueDialog({
       });
     return () => controller.abort();
   }, [sessionId, eventId, node.id, query]);
-  // A value that is a whole JSON object or array opens formatted; the original text stays one tab away.
+  // 完整 JSON 对象或数组默认格式化展示，原文保留在相邻标签页。
   const json = useMemo(() => (value ? formatJson(value.text) : null), [value]);
   const showJson = Boolean(json) && view === "json";
   function copy(text: string, done: string) {

@@ -123,7 +123,7 @@ fn begin_shutdown(app: &tauri::AppHandle, code: i32) {
             }
         });
     if closing.is_err() {
-        // Still release the page-owned tasks and lease if a worker cannot be created.
+        // 工作线程创建失败时仍需释放页面任务与租约。
         state.shutdown.finish(&state.connection, &state.data);
         app.exit(code);
     }
@@ -219,7 +219,7 @@ fn initialize(
                     std::thread::sleep(Duration::from_millis(200));
                 }
                 if heartbeat_connection.heartbeat().is_err() {
-                    // An update stops the backend and closes the desktop so the new copy can open.
+                    // 更新关闭后台及桌面端后，才启动新副本。
                     if runtime::restart_requested(&heartbeat_data) {
                         heartbeat_app.exit(0);
                     }
@@ -371,7 +371,7 @@ pub fn run() {
             let tauri::WindowEvent::CloseRequested { api, .. } = event else {
                 return;
             };
-            // Window close and the macOS Quit menu share the same bounded shutdown.
+            // 窗口关闭与 macOS 退出菜单共用有界清理流程。
             api.prevent_close();
             begin_shutdown(window.app_handle(), 0);
         });
@@ -419,8 +419,7 @@ pub fn run() {
             }
         }
         tauri::RunEvent::Exit => {
-            // macOS native termination (for example Dock > Quit) can skip ExitRequested.
-            // Wait for any in-flight cleanup before returning to NSApplication termination.
+            // macOS 原生退出可能跳过 ExitRequested，返回 NSApplication 终止流程前需等待正在进行的清理。
             if let Some(state) = app.try_state::<Desktop>() {
                 state.stopped.store(true, Ordering::Release);
                 state.shutdown.finish(&state.connection, &state.data);

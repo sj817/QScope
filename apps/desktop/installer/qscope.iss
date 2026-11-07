@@ -28,7 +28,7 @@ UninstallFilesDir={localappdata}\QScope\maintenance
 UninstallDisplayIcon={app}\QScope.exe
 SetupIconFile={#Repository}\apps\desktop\icons\icon.ico
 OutputDir={#OutputDirectory}
-OutputBaseFilename=QScope-{#ProductVersion}-windows-x64-setup
+OutputBaseFilename=QScope-windows-x64-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 
@@ -51,7 +51,7 @@ Name: "{autodesktop}\QScope"; Filename: "{app}\QScope.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\QScope.exe"; Description: "打开 QScope"; Flags: nowait postinstall skipifsilent
-; An online update runs setup silently with /RELAUNCH=1 and reopens QScope afterwards.
+; 在线更新通过 /RELAUNCH=1 静默安装，完成后重新打开 QScope。
 Filename: "{app}\QScope.exe"; Flags: nowait; Check: RelaunchAfterUpdate
 
 [UninstallDelete]

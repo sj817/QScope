@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   EventPage,
   EventSummary,
@@ -35,14 +35,6 @@ function merge(a: Row[], b: Row[]): Row[] {
   const seen = new Set(a.map((r) => r.key));
   return [...a, ...b.filter((r) => !seen.has(r.key))];
 }
-function sourceKey(source: Source | null): string {
-  return !source
-    ? ""
-    : source.kind === "session"
-      ? `session:${source.id}`
-      : `account:${source.account}:${source.anchor}`;
-}
-
 type Page = {
   rows: Row[];
   cursor: string;
@@ -96,8 +88,7 @@ async function fetchPage(
   };
 }
 
-// While frozen, polling continues so the index advances and arrivals can be
-// counted; new rows wait in a bounded buffer and join the list on resume.
+// 冻结时继续轮询以推进索引并统计新增量，新行进入有界缓冲，恢复时合并到列表。
 export function useFeed(
   source: Source | null,
   filter: Filter,
@@ -107,7 +98,7 @@ export function useFeed(
   const [session, setSession] = useState<Session | null>(null);
   const [segments, setSegments] = useState<Session[]>([]);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(source));
   const [indexing, setIndexing] = useState(false);
   const [hasEarlier, setHasEarlier] = useState(false);
   const [olderLoading, setOlderLoading] = useState(false);
@@ -115,8 +106,23 @@ export function useFeed(
   const [appended, setAppended] = useState(0);
   const [trimmed, setTrimmed] = useState(0);
   const [reload, setReload] = useState(0);
-  const key = sourceKey(source);
-  const extraKey = JSON.stringify(filter.advanced || {});
+  const sourceValue = JSON.stringify(source);
+  const filterValue = JSON.stringify(filter);
+  const requestKey = JSON.stringify([sourceValue, filterValue, reload]);
+  const [previousRequest, setPreviousRequest] = useState(requestKey);
+  const requestChanged = previousRequest !== requestKey;
+  if (requestChanged) {
+    setPreviousRequest(requestKey);
+    setRows([]);
+    setSession(null);
+    setSegments([]);
+    setError("");
+    setHasEarlier(false);
+    setPending(0);
+    setIndexing(false);
+    setLoading(Boolean(source));
+    setOlderLoading(false);
+  }
   const frozenRef = useRef(frozen);
   const rowsRef = useRef(rows);
   const buffer = useRef<Row[]>([]);
@@ -126,25 +132,30 @@ export function useFeed(
     frozenRef.current = frozen;
   }, [frozen]);
 
-  function show(next: Row[]) {
+  const show = useCallback((next: Row[]) => {
     rowsRef.current = next;
     setRows(next);
-  }
-  function append(incoming: Row[]) {
-    if (!incoming.length) return;
-    const previous = rowsRef.current;
-    const combined = merge(previous, incoming);
-    const removed = Math.max(0, combined.length - MAX_ROWS);
-    if (removed) {
-      setHasEarlier(true);
-      setTrimmed((n) => n + removed);
-    }
-    if (combined.length > previous.length)
-      setAppended((n) => n + combined.length - previous.length);
-    show(removed ? combined.slice(removed) : combined);
-  }
+  }, []);
+  const append = useCallback(
+    (incoming: Row[]) => {
+      if (!incoming.length) return;
+      const previous = rowsRef.current;
+      const combined = merge(previous, incoming);
+      const removed = Math.max(0, combined.length - MAX_ROWS);
+      if (removed) {
+        setHasEarlier(true);
+        setTrimmed((n) => n + removed);
+      }
+      if (combined.length > previous.length)
+        setAppended((n) => n + combined.length - previous.length);
+      show(removed ? combined.slice(removed) : combined);
+    },
+    [show],
+  );
 
   useEffect(() => {
+    const source = JSON.parse(sourceValue) as Source | null;
+    const filter = JSON.parse(filterValue) as Filter;
     const current = ++generation.current;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -152,15 +163,7 @@ export function useFeed(
     let initialized = false;
     buffer.current = [];
     overflow.current = false;
-    show([]);
-    setSession(null);
-    setSegments([]);
-    setError("");
-    setHasEarlier(false);
-    setPending(0);
-    setIndexing(false);
-    setLoading(Boolean(source));
-    setOlderLoading(false);
+    rowsRef.current = [];
     async function poll() {
       if (!source || controller.signal.aborted) return;
       let delay = 750;
@@ -212,8 +215,7 @@ export function useFeed(
       controller.abort();
       clearTimeout(timer);
     };
-    // The source and filter are described by their keys.
-  }, [key, filter.q, filter.direction, filter.controls, extraKey, reload]);
+  }, [sourceValue, filterValue, reload, show, append]);
 
   useEffect(() => {
     if (frozen || (!buffer.current.length && !overflow.current)) return;
@@ -228,7 +230,7 @@ export function useFeed(
     buffer.current = [];
     setPending(0);
     append(waiting);
-  }, [frozen]);
+  }, [frozen, append]);
 
   async function earlier() {
     const first = rowsRef.current[0];

@@ -104,8 +104,7 @@ impl Library {
     }
 
     pub fn snapshot(&mut self) -> Catalog {
-        // A busy selected capture keeps its last metadata. Catalog reads never
-        // index payloads or wait for a capture's I/O lock.
+        // 繁忙抓包沿用最近元数据，目录查询按需复用索引并避开抓包 I/O 锁。
         for (id, capture) in &self.captures {
             if let Ok(capture) = capture.try_lock() {
                 self.summaries.insert(id.clone(), capture.summary());
@@ -130,8 +129,7 @@ impl Library {
 }
 
 impl Library {
-    /// Launches whose latest observed account matches, oldest first. Files under
-    /// `excluded` (imports, recordings and proxy output) never join an account view.
+    /// 按启动时间列出最近观察到同一账号的会话，excluded 下的导入、录制和代理输出独立展示。
     pub fn members(&mut self, account: &str, excluded: &Path) -> Vec<(Session, SharedCapture)> {
         let mut members: Vec<_> = self
             .snapshot()
@@ -151,8 +149,7 @@ impl Library {
 
 const MAX_MEMBERS: usize = 64;
 
-/// Bounded account look-ahead for files that are not indexed yet. Runs outside
-/// the library lock; a busy capture is skipped until the next workspace pass.
+/// 在库锁外对未索引文件执行有界账号前瞻，繁忙抓包留待下轮处理。
 pub fn scan_accounts_shared(library: &Mutex<Library>, budget: usize) -> Result<(), ApiError> {
     let captures: Vec<_> = library
         .lock()
@@ -183,8 +180,7 @@ pub fn scan_accounts_shared(library: &Mutex<Library>, budget: usize) -> Result<(
     Ok(())
 }
 
-/// Walk outside the library lock and publish each valid header immediately.
-/// An unrelated profile/cache directory cannot block an already opened record.
+/// 在库锁外遍历并及时发布有效头部，已打开记录可独立于其他配置和缓存目录访问。
 pub fn discover_shared(library: &Mutex<Library>) -> Result<(), ApiError> {
     let mut scanner = {
         let mut library = library.lock().map_err(|_| crate::lock_error())?;
@@ -251,7 +247,7 @@ impl Scanner {
         if meta.is_dir() {
             if let Ok(entries) = fs::read_dir(&canonical) {
                 let mut entries: Vec<_> = entries.flatten().take(self.remaining + 1).collect();
-                // Prefer the research capture directory before Electron caches.
+                // 优先遍历研究抓包目录，再遍历 Electron 缓存。
                 entries.sort_by_key(|entry| (entry.file_name() != ".qscope", entry.file_name()));
                 for entry in entries {
                     self.walk(root, &entry.path(), depth + 1, publish)?;

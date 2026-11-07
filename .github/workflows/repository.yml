@@ -1,167 +1,59 @@
-name: Repository standards
+name: repository checks
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  layout:
+  check:
+    name: checks and synthetic tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-2025, ubuntu-24.04, macos-15]
-    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - name: 检出源码
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24.22.1
-          package-manager-cache: false
-      - name: Check repository layout and documentation links
-        run: node tools/check-repo.ts
-
-  scripts:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24.22.1
-          package-manager-cache: false
-      - name: Install pinned lint and type tools
-        run: npx --yes pnpm@9.15.9 install --frozen-lockfile
-      - name: ESLint
-        run: npx --yes pnpm@9.15.9 run lint
-      - name: Prettier
-        run: npx --yes pnpm@9.15.9 run format:check
-      - name: Type-check tools
-        run: npx --yes pnpm@9.15.9 run typecheck
-      - name: Test isolated macOS bootstrap with synthetic Electron APIs
-        run: node --test collectors/qqnt-macos/bootstrap_test.cjs
-      - name: Test platform update signatures and release aggregation
-        run: node --test tools/release-sign.test.ts
-
-  rust:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-15]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Install pinned Rust toolchain
-        shell: bash
-        run: rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
-      - name: Format
-        run: cargo fmt --all -- --check
-      - name: Lint
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Test
-        run: cargo test --workspace --locked
-      - name: Check generated WebUI contract
-        run: cargo run -p qscope-web --locked -- types --check
-
-  # Exercise Edge on Windows and Playwright WebKit on macOS.
-  web:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            browser: chromium
-            channel: msedge
-          - os: macos-15
-            browser: webkit
-            channel: ""
-    env:
-      QSCOPE_BROWSER: ${{ matrix.browser }}
-      QSCOPE_BROWSER_CHANNEL: ${{ matrix.channel }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24.22.1
-          package-manager-cache: false
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.97.0 --profile minimal
-      - name: Build local API server
-        run: cargo build -p qscope-web -p qscope-cli --locked
-      - name: Install pinned frontend dependencies
-        working-directory: apps/web
-        run: npx --yes pnpm@9.15.9 install --frozen-lockfile
-      - name: Check types and build WebUI
-        working-directory: apps/web
-        run: npx --yes pnpm@9.15.9 run build
-      - name: Install pinned Playwright WebKit
-        if: runner.os == 'macOS'
-        working-directory: apps/web
-        run: npx --yes pnpm@9.15.9 exec playwright install webkit
-      - name: Install pinned DevTools frontend assets
-        working-directory: collectors/devtools
-        run: |
-          npx --yes pnpm@9.15.9 install --frozen-lockfile --ignore-scripts
-      - name: Test synthetic capture workflows
-        working-directory: apps/web
-        run: npx --yes pnpm@9.15.9 test
-      - name: Keep Playwright traces of failed tests
+      - name: 准备开发环境
+        uses: ./.github/actions/setup
+      - name: 检查代码与契约
+        run: pnpm check
+      - name: 运行脚本与 Rust 测试
+        run: pnpm test
+      - name: 安装测试浏览器
+        if: runner.os != 'Windows'
+        run: pnpm --filter @qscope/tests exec playwright install --with-deps ${{ runner.os == 'macOS' && 'webkit' || 'chromium' }}
+      - name: 验证 WebUI
+        run: pnpm test:webui
+      - name: 验证本机采集器
+        if: runner.os != 'Linux'
+        run: pnpm build:native && pnpm test:native
+      - name: 验证 Linux 命令行分发包
+        if: runner.os == 'Linux'
+        run: pnpm build:cli && pnpm test:packaged
+      - name: 保存失败时的浏览器跟踪
+        uses: actions/upload-artifact@v7
         if: failure()
-        uses: actions/upload-artifact@v7
         with:
-          name: playwright-results-${{ matrix.os }}
-          path: apps/web/test-results
+          name: test-results-${{ matrix.os }}
+          path: tests/test-results
+          if-no-files-found: ignore
           retention-days: 7
 
-  macos-package:
-    runs-on: macos-15
-    timeout-minutes: 90
-    env:
-      CARGO_BUILD_JOBS: "2"
-      APPLE_SIGNING_IDENTITY: "-"
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24.22.1
-          package-manager-cache: false
-      - name: Verify Apple Silicon runner
-        run: node --input-type=module -e "import assert from 'node:assert/strict'; assert.equal(process.platform, 'darwin'); assert.equal(process.arch, 'arm64');"
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.97.0 --profile minimal
-      - name: Install pinned pnpm
-        run: npm install --global pnpm@9.15.9
-      - name: Build and test native capture with synthetic packets only
-        run: |
-          node tools/build-native-macos.ts
-          node tools/test-native-macos.ts
-      - name: Build the ad-hoc signed app, DMG and CLI archives
-        run: node tools/build-desktop.ts
-      - name: Verify packaged executables and synthetic offline backend
-        run: node apps/cli/tests/packaged-macos.ts
-      - name: Verify real signed update archives and rollback backup
-        run: node tools/test-update-macos.ts
-      - name: Keep package validation evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: macos-package-validation
-          path: artifacts/architecture/packaged-macos
-          if-no-files-found: ignore
-          overwrite: true
-          retention-days: 7
+  package:
+    if: github.event_name != 'pull_request'
+    needs: check
+    uses: ./.github/workflows/package.yml

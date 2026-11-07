@@ -1,4 +1,4 @@
-//! Rebuildable metadata only. Raw commands and payloads remain in .qscap.
+//! 这里只保存可重建元数据，原始命令和包体保存在 .qscap。
 use crate::{capture::Entry, contract::Session};
 use qscope_core::native;
 use rusqlite::{Connection, OptionalExtension, params};

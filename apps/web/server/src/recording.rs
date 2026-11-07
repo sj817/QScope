@@ -1,4 +1,4 @@
-//! Record a time window from an existing append-only capture. Never controls the QQ probe.
+//! 从现有追加式抓包录制时间窗口，QQ 探针独立运行。
 use crate::contract::{ApiError, Recording, Session};
 use qscope_core::{
     data::{U64, sha256},
@@ -153,7 +153,7 @@ impl Manager {
         {
             return Err(ApiError::new("query", "最多同时录制 4 段"));
         }
-        // Establish the last complete source boundary. Do not start in the middle of a record.
+        // 以源文件最后完整记录边界为起点。
         let mut reader =
             native::Reader::new(BufReader::new(File::open(&session.path).map_err(io)?))
                 .map_err(io)?;
@@ -209,7 +209,7 @@ impl Manager {
         let mut first = marker(reader.header.pid, "status", "recording_started");
         first.qpc = U64(last_qpc);
         output.write_all(&encode_event(&first, 1, 0)).map_err(io)?;
-        // A window keeps the account its source observed before the window began.
+        // 录制窗口继承窗口开始前源文件观察到的账号。
         let mut first_id = 1;
         if let Some(observed) = &account {
             let mut status = marker(reader.header.pid, "status", &observed.status_text());
@@ -272,7 +272,7 @@ fn record_loop(
     let deadline = Instant::now() + Duration::from_secs(3600);
     let mut stop_at = None;
     loop {
-        // Drain complete data already on disk when Stop is clicked, but never wait for a partial tail.
+        // 停止时读取磁盘上已有的完整数据，遇到不完整尾部即结束。
         let stopping = stop.load(Ordering::Acquire);
         if stopping && stop_at.is_none() {
             stop_at = Some(fs::metadata(source).map_err(io)?.len());

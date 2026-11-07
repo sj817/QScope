@@ -1,6 +1,6 @@
-// Visual adaptation of ikenxuan/karin-plugin-kkk's DouyinVideoWork/AmbientCover.
+// 界面视觉改编自 ikenxuan/karin-plugin-kkk 的 DouyinVideoWork/AmbientCover。
 // SPDX-License-Identifier: GPL-3.0-only
-// Pinned sources and attribution: ../vendor/karin-plugin-kkk/source.json
+// 固定源码及署名记录见 ../vendor/karin-plugin-kkk/source.json。
 import { useEffect, useState } from "react";
 
 export function useAppearance() {
@@ -20,7 +20,7 @@ export function useAppearance() {
     try {
       localStorage.setItem("qscope.appearance", theme);
     } catch {
-      /* Private browser storage may be disabled. */
+      /* 隐私浏览模式可能禁用本地存储。 */
     }
   }, [theme]);
   return {

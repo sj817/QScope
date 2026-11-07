@@ -278,7 +278,7 @@ impl Validator {
         Ok(())
     }
 
-    /// Returns unchanged payload bytes only after checking length and SHA256.
+    /// 长度及 SHA256 验证通过后，返回原始包体字节。
     pub fn push(&mut self, record: &Record) -> Result<Option<Vec<u8>>, CaptureError> {
         self.records += 1;
         if self.records > self.limits.max_records {

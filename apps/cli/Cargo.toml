@@ -9,6 +9,10 @@ publish.workspace = true
 name = "qscope-cli"
 path = "src/main.rs"
 
+[[test]]
+name = "cli"
+path = "../../tests/cli/cli.rs"
+
 [dependencies]
 open = "=5.4.5"
 base64.workspace = true

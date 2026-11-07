@@ -13,7 +13,7 @@ use std::{
 
 #[derive(Args)]
 pub struct Live {
-    /// Backend selector: auto, @path/to/service.json or a loopback URL.
+    /// 后台选择器支持 auto、@path/to/service.json 或回环 URL。
     #[arg(long, default_value = DEFAULT_SERVER, global = true)]
     server: String,
     #[command(subcommand)]
@@ -22,118 +22,118 @@ pub struct Live {
 
 #[derive(Subcommand)]
 enum LiveCommand {
-    /// List capture metadata without loading every payload.
+    /// 查询抓包元数据，按需加载包体。
     Sessions,
-    /// Query a bounded metadata page using the workbench filters.
+    /// 使用工作台筛选条件查询有界元数据页。
     Events {
-        /// Capture session ID from `capture sessions`.
+        /// 来自 capture sessions 的抓包会话 ID。
         session: String,
         #[command(flatten)]
         filters: EventFilters,
     },
-    /// Decode one packet through the existing Rust workbench.
+    /// 复用 Rust 工作台解码单个包。
     Packet {
-        /// Capture session ID from `capture sessions`.
+        /// 来自 capture sessions 的抓包会话 ID。
         session: String,
-        /// Event ID inside that session (not the protocol sequence).
+        /// 该会话中的事件 ID。
         event: u64,
-        /// pb, tlv16be, jce or hex.
+        /// 选择 pb、tlv16be、jce 或 hex 格式。
         #[arg(long, default_value = "pb")]
         format: String,
-        /// Start of the decoded region inside the payload.
+        /// 包体内解码范围的起点。
         #[arg(long, default_value_t = 0)]
         offset: usize,
-        /// Bytes to decode from --offset; the rest of the payload by default.
+        /// 从 --offset 起解码的字节数，默认覆盖剩余包体。
         #[arg(long)]
         length: Option<usize>,
     },
-    /// Compare 2–8 session:event references.
+    /// 对比 2 至 8 个 session:event 引用。
     Compare {
-        /// SESSION:EVENT, repeated 2–8 times.
+        /// SESSION:EVENT 参数，重复传入 2 至 8 次。
         #[arg(long, required = true)]
         packet: Vec<String>,
-        /// pb, tlv16be, jce or hex.
+        /// 选择 pb、tlv16be、jce 或 hex 格式。
         #[arg(long, default_value = "pb")]
         format: String,
     },
-    /// Save a time window from a running producer.
+    /// 从正在运行的生产者保存一个时间窗口。
     Record {
         #[command(subcommand)]
         command: RecordingCommand,
     },
-    /// Wait for matching packets after an explicit event cursor.
+    /// 从显式事件游标之后等待匹配包。
     Wait {
-        /// Capture session ID from `capture sessions`.
+        /// 来自 capture sessions 的抓包会话 ID。
         session: String,
-        /// Only packets after this event ID; pass the newest ID seen before the action.
+        /// 仅查询此事件 ID 之后的包，填写操作前观察到的最新 ID。
         #[arg(long)]
         after: u64,
-        /// Command rules to wait for, separated by commas.
+        /// 等待的命令规则，以逗号分隔。
         #[arg(long)]
         command: Option<String>,
-        /// Command rules to leave out, separated by commas.
+        /// 排除的命令规则，以逗号分隔。
         #[arg(long)]
         exclude: Option<String>,
-        /// all, inbound or outbound.
+        /// 方向选择 all、inbound 或 outbound。
         #[arg(long, default_value = "all")]
         direction: String,
-        /// Seconds to wait, 1–60.
+        /// 等待秒数，范围 1 至 60。
         #[arg(long, default_value_t = 15, value_parser = clap::value_parser!(u64).range(1..=60))]
         timeout: u64,
         #[command(flatten)]
         noise: Noise,
     },
-    /// Summarize the commands seen in a quiet window, such as heartbeats and polling.
+    /// 汇总安静时间窗口内的命令，例如心跳和轮询。
     Noise {
-        /// Capture session ID from `capture sessions`.
+        /// 来自 capture sessions 的抓包会话 ID。
         session: String,
-        /// Last event of the window; the newest event by default.
+        /// 窗口的最后事件，默认使用最新事件。
         #[arg(long)]
         before: Option<u64>,
-        /// Window length up to --before, 1–3600 seconds.
+        /// 截至 --before 的窗口长度，范围 1 至 3600 秒。
         #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..=3600))]
         seconds: u64,
     },
 }
 
-// Background traffic is left out of query results only; captures and recordings keep every packet.
+// 查询结果可隐藏背景流量，原始抓包和录制保留所有包。
 #[derive(Args)]
 struct Noise {
-    /// Hide commands named like heartbeats and keepalives.
+    /// 隐藏名称类似心跳和保活的命令。
     #[arg(long)]
     hide_heartbeat: bool,
-    /// Leave out commands already seen in the SECONDS before --after, such as polling.
+    /// 排除 --after 之前指定秒数内已出现的命令，例如轮询。
     #[arg(long, value_name = "SECONDS", value_parser = clap::value_parser!(u64).range(1..=3600))]
     baseline: Option<u64>,
 }
 
 #[derive(Args)]
 struct EventFilters {
-    /// Substring of the command or sequence, or an exact event ID.
+    /// 匹配命令或序号子串，或精确事件 ID。
     #[arg(long)]
     q: Option<String>,
-    /// Command rules to keep, separated by commas: =exact, a*glob? or a substring.
+    /// 保留命令规则，以逗号分隔，支持 =精确名称、a*glob? 和子串。
     #[arg(long)]
     include: Option<String>,
-    /// Command rules to leave out, in the --include syntax.
+    /// 按 --include 的语法指定排除命令。
     #[arg(long)]
     exclude: Option<String>,
-    /// all, inbound or outbound.
+    /// 方向选择 all、inbound 或 outbound。
     #[arg(long, default_value = "all")]
     direction: String,
-    /// Also list status, loss and end records besides packets.
+    /// 同时列出状态、丢包和结束记录。
     #[arg(long)]
     controls: bool,
-    /// Only events after this event ID.
+    /// 仅查询此事件 ID 之后的事件。
     #[arg(long)]
     after: Option<u64>,
-    /// Only events before this event ID.
+    /// 仅查询此事件 ID 之前的事件。
     #[arg(long)]
     before: Option<u64>,
-    /// Page size, 1–1000. While has_more is true, pass the returned cursor as --after.
+    /// 每页 1 至 1000 条，has_more 为 true 时将返回游标传给 --after。
     #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u16).range(1..=1000))]
     limit: u16,
-    /// Additional server filters, such as min_size=10 or error_only=true.
+    /// 附加服务端筛选，例如 min_size=10 或 error_only=true。
     #[arg(long)]
     filter: Vec<String>,
     #[command(flatten)]
@@ -195,11 +195,11 @@ impl EventFilters {
 
 #[derive(Subcommand)]
 enum RecordingCommand {
-    /// List recordings with their state (recording, stopped or error) and output path.
+    /// 列出录制状态与输出路径，状态为 recording、stopped 或 error。
     List,
-    /// Start saving packets from now on; the session may be left out when only one is live.
+    /// 从当前时刻开始保存包，仅有一个在线会话时可省略会话参数。
     Start { session: Option<String> },
-    /// Stop a recording; the recording may be left out when only one is running.
+    /// 停止录制，仅有一个运行中的录制时可省略录制参数。
     Stop { recording: Option<String> },
 }
 
@@ -212,7 +212,7 @@ fn number(value: &serde_json::Value) -> u64 {
         .unwrap_or(0)
 }
 
-// Packets in the `seconds` up to and including `last`, at most the newest 1000.
+// 查询截至 last 的指定秒数内的包，最多返回最新 1000 条。
 fn quiet_window(
     client: &Client,
     path: &str,
@@ -254,7 +254,7 @@ fn quiet_window(
     )
 }
 
-// One exact rule per command; names the rule syntax cannot carry are reported instead.
+// 每个命令生成一条精确规则，无法用规则语法表示的名称单独报告。
 fn exact_rules(commands: &[String]) -> (Vec<String>, Vec<String>) {
     let (mut rules, mut skipped) = (Vec::new(), Vec::new());
     for command in commands {
@@ -272,7 +272,7 @@ fn exact_rules(commands: &[String]) -> (Vec<String>, Vec<String>) {
     (rules, skipped)
 }
 
-// Commands per name in a window: how often, how regularly and how large.
+// 按名称汇总窗口内命令的频率、规律性及大小。
 fn summarize(events: &[serde_json::Value]) -> Vec<serde_json::Value> {
     let mut groups: std::collections::BTreeMap<&str, Vec<&serde_json::Value>> = Default::default();
     for event in events.iter().filter(|event| event["kind"] == "packet") {
@@ -293,7 +293,7 @@ fn summarize(events: &[serde_json::Value]) -> Vec<serde_json::Value> {
                 .collect();
             gaps.sort_unstable();
             let median = gaps.get(gaps.len() / 2).copied();
-            // Regular: three or more packets whose gaps stay within a fifth of the median.
+            // 至少出现三个包，间隔相对中位数的偏差不超过五分之一时视为规律流量。
             let regular = median.is_some_and(|median| {
                 items.len() >= 3
                     && median > 0
@@ -318,7 +318,7 @@ fn summarize(events: &[serde_json::Value]) -> Vec<serde_json::Value> {
     summary
 }
 
-// Adds the noise options to a query and reports what they left out.
+// 为查询补充去噪选项，并报告被排除的内容。
 fn quiet(
     client: &Client,
     path: &str,
@@ -572,48 +572,48 @@ pub struct Agent {
 
 #[derive(Args)]
 struct Installation {
-    /// Same as --scope user.
+    /// 等同于 --scope user。
     #[arg(long = "global", conflicts_with = "project")]
     global_install: bool,
-    /// project writes into the project directory, user into the home directory.
+    /// project 写入项目目录，user 写入用户主目录。
     #[arg(long, default_value = "project")]
     scope: skills::Scope,
-    /// Project directory; the current directory by default.
+    /// 项目目录，默认为当前目录。
     #[arg(long)]
     project: Option<PathBuf>,
-    /// Backend selector written into the skill.
+    /// 写入技能的后台选择器。
     #[arg(long, default_value = DEFAULT_SERVER)]
     server: String,
 }
 
 #[derive(Subcommand)]
 enum AgentCommand {
-    /// Install the generated skill atomically into the selected agent directory.
+    /// 以原子方式将生成的技能安装到指定 AI 工具目录。
     Install {
-        /// claude-code, codex or cursor.
+        /// 选择 claude-code、codex 或 cursor。
         #[arg(long)]
         agent: skills::Agent,
         #[command(flatten)]
         options: Installation,
     },
-    /// Remove an unmodified managed skill and the CLI permissions added by QScope.
+    /// 移除完整的托管技能及 QScope 新增的 CLI 权限。
     Uninstall {
         #[arg(long)]
         agent: skills::Agent,
         #[command(flatten)]
         options: Installation,
     },
-    /// Inspect all supported agent installation paths.
+    /// 检查所有支持的 AI 工具安装路径、版本与哈希。
     Status {
         #[command(flatten)]
         options: Installation,
     },
-    /// Print an installation request that can be pasted into any AI assistant.
+    /// 生成可粘贴给 AI 助手的安装请求。
     Prompt {
         #[command(flatten)]
         options: Installation,
     },
-    /// Print the rendered SKILL.md for other Agent Skills clients.
+    /// 输出生成的 SKILL.md，供其他 Agent Skills 客户端安装。
     Skill {
         #[arg(long, default_value = DEFAULT_SERVER)]
         server: String,
@@ -706,22 +706,22 @@ pub fn agent(args: Agent, json_output: bool) -> Result<(), Error> {
 
 #[derive(Args)]
 pub struct Devtools {
-    /// With open: return the debugging link without opening a browser.
+    /// 配合 open 使用时返回调试链接。
     #[arg(long, global = true)]
     no_open: bool,
-    /// Backend selector: auto, @path/to/service.json or a loopback URL.
+    /// 后台选择器支持 auto、@path/to/service.json 或回环 URL。
     #[arg(long, default_value = DEFAULT_SERVER, global = true)]
     server: String,
-    /// Research bridge to control, such as http://127.0.0.1:19860.
+    /// 指定研究控制桥，例如 http://127.0.0.1:19860。
     #[arg(long, global = true)]
     endpoint: Option<String>,
-    /// Explicit local connection descriptor. Its token stays off stdout.
+    /// 指定本机连接描述文件，其中的令牌按私密数据处理。
     #[arg(long, global = true)]
     connection: Option<PathBuf>,
-    /// Act only if the research QQ still has this PID (from the `devtools windows` info).
+    /// 仅对仍匹配此 PID 的研究 QQ 操作，PID 来自 devtools windows。
     #[arg(long, global = true, requires = "birth")]
     pid: Option<u32>,
-    /// Process creation FILETIME that goes with --pid.
+    /// 与 --pid 配套的进程创建时间 FILETIME。
     #[arg(long, global = true, requires = "pid")]
     birth: Option<u64>,
     #[command(subcommand)]
@@ -730,23 +730,23 @@ pub struct Devtools {
 
 #[derive(Subcommand)]
 enum DevtoolsCommand {
-    /// Identity of the selected research bridge.
+    /// 所选研究控制桥的身份。
     Info,
-    /// List the research QQ windows with their IDs, titles and URLs.
+    /// 列出研究 QQ 窗口的 ID、标题和 URL。
     Windows,
-    /// Visible text, interactive elements and their selectors in one window.
+    /// 读取窗口可见文本、交互元素及其选择器。
     Snapshot {
         #[arg(long)]
         window: u32,
     },
-    /// Click the single visible element matching a CSS selector.
+    /// 点击 CSS 选择器唯一匹配的可见元素。
     Click {
         #[arg(long)]
         window: u32,
         #[arg(long)]
         selector: String,
     },
-    /// Replace the content of the input matching a CSS selector.
+    /// 替换 CSS 选择器匹配的输入框内容。
     Fill {
         #[arg(long)]
         window: u32,
@@ -755,45 +755,45 @@ enum DevtoolsCommand {
         #[arg(long)]
         text: String,
     },
-    /// Send one key, such as Enter, Tab or Escape.
+    /// 发送单个按键，例如 Enter、Tab 或 Escape。
     Press {
         #[arg(long)]
         window: u32,
         #[arg(long)]
         key: String,
     },
-    /// Evaluate a bounded expression in one window's renderer.
+    /// 在指定窗口的渲染进程执行有界表达式。
     Eval {
         #[arg(long)]
         window: u32,
         #[arg(long)]
         expression: String,
     },
-    /// Evaluate a bounded expression in the research Electron main process.
+    /// 在研究 Electron 主进程执行有界表达式。
     MainEval {
         #[arg(long)]
         expression: String,
     },
-    /// Open the Chii DevTools of a window; the current visible window by default.
+    /// 打开窗口的 Chii DevTools，默认选择当前可见窗口。
     Open {
         #[arg(long)]
         window: Option<u32>,
     },
-    /// Save a PNG screenshot of one window.
+    /// 保存指定窗口的 PNG 截图。
     Screenshot {
         #[arg(long)]
         window: u32,
         #[arg(long)]
         out: PathBuf,
     },
-    /// Print the research launch command and connection file path.
+    /// 输出研究副本的启动命令与连接文件路径。
     LaunchCommand {
         #[arg(long, default_value = "automation")]
         profile: String,
         #[arg(long, default_value_t = 19860)]
         port: u16,
     },
-    /// Start an owned research copy with capture and its control bridge.
+    /// 启动带抓包及控制桥的受控研究副本。
     Launch {
         #[arg(long, default_value = "automation")]
         profile: String,

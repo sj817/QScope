@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import type { ByteRange, Session } from "./api.generated";
 import { fileTime, size } from "./api";
@@ -207,7 +213,7 @@ export function Direction({ value }: { value: string }) {
   );
 }
 
-// A list row leads with the same 收/发 label as the detail header, or the event kind.
+// 列表行与详情标题共用收发标签，其他记录显示事件类型。
 function RowMark({ event }: { event: Row["event"] }) {
   if (event.kind !== "packet")
     return (
@@ -323,16 +329,14 @@ export function PacketTable({
   const items = display(rows, segments);
   const { start, end } = useWindow(ref, ROW_HEIGHT, items.length);
   const anchor = useRef<string | undefined>(undefined);
-  // The keyboard cursor follows clicks, arrows and right-clicks, so focus returns to the row a menu came from.
+  // 键盘游标跟随单击、方向键和右键操作，菜单关闭后恢复到原行。
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const expected = useRef<number | null>(null);
   const lastTrimmed = useRef(trimmed);
-  // Where the user left the list. A reload empties it for a moment, and on a slow machine the
-  // browser lays that out and clamps scrollTop to 0; that is not a place the user chose.
+  // 保留用户阅读位置，避免重载期间空列表造成浏览器将 scrollTop 临时归零。
   const resting = useRef(0);
   const wasEmpty = useRef(items.length === 0);
-  // Only the user's own wheel, touch, keys or scrollbar drag may stop or resume following; a click
-  // on a row is not a scroll, and a reload can follow it within a moment.
+  // 仅用户滚轮、触控、按键或拖动滚动条可以控制跟随状态，点击行和重载保持原有跟随选择。
   const gesture = useRef(0);
   const pressed = useRef(false);
   useEffect(() => {
@@ -375,12 +379,12 @@ export function PacketTable({
     else if (top + ROW_HEIGHT > element.scrollTop + element.clientHeight)
       scrollTo(top + ROW_HEIGHT - element.clientHeight);
   }
-  useLayoutEffect(() => {
+  const followTail = useEffectEvent(() => {
     if (follow && ref.current) scrollTo(ref.current.scrollHeight);
-  }, [last, follow, items.length]);
-  useLayoutEffect(() => {
-    // Rows came back after a reload: show the chosen packet if it is still there, otherwise
-    // return to where the user was. Following is handled above.
+  });
+  useLayoutEffect(() => followTail(), [last, follow, items.length]);
+  const restoreRows = useEffectEvent(() => {
+    // 重载后优先显示仍存在的选中包，否则恢复阅读位置，跟随状态由上方逻辑处理。
     const empty = items.length === 0;
     const refilled = wasEmpty.current && !empty;
     wasEmpty.current = empty;
@@ -392,20 +396,28 @@ export function PacketTable({
       );
     if (chosen) reveal(selectedKey, true);
     else scrollTo(resting.current);
-  }, [items.length === 0]);
+  });
+  const emptyRows = items.length === 0;
+  useLayoutEffect(() => restoreRows(), [emptyRows]);
+  const jumpToTail = useEffectEvent(() => {
+    if (ref.current) scrollTo(ref.current.scrollHeight);
+  });
   useLayoutEffect(() => {
-    if (jump && ref.current) scrollTo(ref.current.scrollHeight);
+    if (jump) jumpToTail();
   }, [jump]);
-  useLayoutEffect(() => {
+  const revealLocated = useEffectEvent(() => {
     if (locate) reveal(locate.key, true);
-  }, [locate?.n]);
-  useLayoutEffect(() => {
-    // Rows removed from the head would otherwise shift what the user is reading.
+  });
+  const locateRequest = locate?.n;
+  useLayoutEffect(() => revealLocated(), [locateRequest]);
+  const compensateTrim = useEffectEvent(() => {
+    // 从头部移除行时补偿位置，保留当前阅读内容。
     const removed = trimmed - lastTrimmed.current;
     lastTrimmed.current = trimmed;
     if (removed > 0 && !follow && ref.current)
       scrollTo(ref.current.scrollTop - removed * ROW_HEIGHT);
-  }, [trimmed]);
+  });
+  useLayoutEffect(() => compensateTrim(), [trimmed]);
   function onScroll(event: React.UIEvent) {
     const element = ref.current!;
     const programmatic =
@@ -513,7 +525,7 @@ export function PacketTable({
     }
     anchor.current = row.key;
     setCursor(row.key);
-    // In compare mode a click ticks the row and previews it without leaving the list.
+    // 对比模式下单击勾选并预览当前行，保留列表位置。
     if (picking) {
       handlers.onToggle(row);
       handlers.onSelect(row, "keyboard");
@@ -538,7 +550,7 @@ export function PacketTable({
         onWheel={touched}
         onTouchMove={touched}
         onPointerDown={(event) => {
-          // The scrollbar belongs to the list element itself, unlike its rows.
+          // 滚动条属于列表容器本身。
           if (event.target === event.currentTarget) pressed.current = true;
         }}
         onKeyDown={(event) => {
@@ -781,7 +793,7 @@ export function HexView({
   const bytes = hex.length / 2;
   const rows = Math.ceil(bytes / 16);
   const { start, end } = useWindow(scrollRef, 24, rows);
-  // Small payloads give their space back to the field tree.
+  // 小包体释放横向空间给字段树。
   return (
     <div
       className="hex-view"

@@ -6,7 +6,7 @@ pub const CLI_NAME: &str = "qscope-cli.exe";
 pub const CLI_NAME: &str = "qscope-cli";
 
 pub fn cli_path(executable: &Path) -> PathBuf {
-    // macOS bundles put both signed product executables in Contents/MacOS.
+    // macOS 应用包将两个已签名产品可执行文件放在 Contents/MacOS。
     executable.with_file_name(CLI_NAME)
 }
 

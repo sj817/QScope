@@ -19,10 +19,7 @@ export type MenuRequest = {
   returnFocus?: HTMLElement | null;
 };
 
-// Positioned from its measured size and flipped at viewport edges. Focus moves
-// into the menu on open and returns to the invoking element on close. It is
-// portalled to <body>: panes with backdrop-filter would otherwise become the
-// containing block of the fixed menu and clip it.
+// 根据实际尺寸定位菜单，并在视口边缘翻转。打开时聚焦菜单，关闭时恢复触发元素焦点。菜单挂载在 body，避开 backdrop-filter 面板对固定定位的裁剪。
 export function ContextMenu({
   request,
   onClose,
@@ -39,8 +36,7 @@ export function ContextMenu({
   const items = request.groups.flatMap((group) => group.items);
   const enabled = items.filter((item) => !item.disabled);
   const [active, setActive] = useState(enabled[0]?.id);
-  // A menu opened by keyboard can appear under a resting cursor; only real
-  // pointer movement takes the highlight away from the keyboard.
+  // 键盘打开菜单时鼠标可能恰好悬停，仅实际指针移动才接管高亮。
   const pointer = useRef<{ x: number; y: number } | null>(null);
   function hover(event: React.MouseEvent, item: MenuItem) {
     const last = pointer.current;

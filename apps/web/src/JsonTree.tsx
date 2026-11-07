@@ -9,7 +9,7 @@ export function visibleChildren(node: FieldNode): FieldNode[] {
     ? node.children[0].children
     : node.children;
 }
-// Every branch the view can show; the virtual list makes opening all of them cheap.
+// 列出视图可显示的全部分支，虚拟列表控制完全展开的成本。
 export function initialExpanded(nodes: FieldNode[]): Set<string> {
   const ids: string[] = [];
   const walk = (list: FieldNode[]) => {
@@ -24,7 +24,7 @@ export function initialExpanded(nodes: FieldNode[]): Set<string> {
   walk(nodes);
   return new Set(ids);
 }
-// Later pages repeat ancestors as shells; their new children join the nodes already shown.
+// 后续分页以外壳重复祖先，新增子节点合并到已有节点。
 export function mergeNodes(base: FieldNode[], extra: FieldNode[]): FieldNode[] {
   if (!extra.length) return base;
   const index = new Map(base.map((node, i) => [node.id, i]));
@@ -50,7 +50,7 @@ export type FieldContext = (
   origin: HTMLElement,
 ) => void;
 
-// One fixed-height line per field, closing brace or edge of the view.
+// 每个字段、结束括号或视图边缘占一行固定高度。
 const LINE = 22;
 type Line =
   | {
@@ -75,7 +75,7 @@ function flatten(
 ): Line[] {
   const lines: Line[] = [{ kind: "brace", key: "open", text: "{" }];
   const walk = (list: FieldNode[], depth: number, parent: string) => {
-    // Repeated keys carry their occurrence index in the display path.
+    // 重复键在显示路径中携带出现次序。
     const counts = new Map<string, number>();
     for (const node of list)
       counts.set(
@@ -117,7 +117,7 @@ function flatten(
   return lines;
 }
 
-// The guide of the object holding the selected field stands out, as in an editor.
+// 选中字段所属对象的缩进线高亮，保持编辑器式层级提示。
 function activeGuide(
   lines: Line[],
   selected: string | null,
@@ -151,7 +151,7 @@ function activeGuide(
     level: parent.depth,
   };
 }
-// Brackets cycle through three colors by nesting level.
+// 括号按嵌套层级循环使用三种颜色。
 const bracket = (depth: number) => `json-bracket level-${(depth + 1) % 3}`;
 
 export function FieldTree({
@@ -187,10 +187,12 @@ export function FieldTree({
   );
   const guide = useMemo(() => activeGuide(lines, selected), [lines, selected]);
   const { start, end } = useWindow(scrollRef, LINE, lines.length);
-  // Fields stream in as the end of the loaded view comes near.
+  const onMore = more?.onMore;
+  const moreLoading = more?.loading;
+  // 接近已加载视图末尾时继续加载字段。
   useEffect(() => {
-    if (more && !more.loading && end >= lines.length - 40) more.onMore();
-  }, [end, lines.length, more?.loading]);
+    if (onMore && !moreLoading && end >= lines.length - 40) onMore();
+  }, [end, lines.length, moreLoading, onMore]);
   useEffect(() => {
     const element = scrollRef.current;
     const at = lines.findIndex(
@@ -208,7 +210,7 @@ export function FieldTree({
     if (top < element.scrollTop) element.scrollTop = top;
     else if (top + LINE > element.scrollTop + element.clientHeight)
       element.scrollTop = top + LINE - element.clientHeight;
-  }, [selected, expanded]);
+  }, [selected, lines, scrollRef]);
   function toggle(node: FieldNode, open: boolean) {
     const next = new Set(expanded);
     if (open) next.delete(node.id);
@@ -234,7 +236,7 @@ export function FieldTree({
       node.children.some((c) => c.candidate && c.id === selected);
     const comma = !open && !last && <span className="json-punctuation">,</span>;
     const choose = () => onSelect(node);
-    // A click selects the field and also folds or unfolds an object; a double click picks the whole value.
+    // 单击选择字段并切换对象折叠状态，双击选择完整值。
     const click = (event: MouseEvent) => {
       if (event.detail > 1 || window.getSelection()?.toString()) return;
       choose();

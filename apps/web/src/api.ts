@@ -1,11 +1,11 @@
 import type { ApiError } from "./api.generated";
 
-// Blocked browser storage keeps the token for this page only.
+// 浏览器存储被禁用时，令牌仅保存在当前页面内存。
 let token: string | null = null;
 try {
   token = sessionStorage.getItem("qscope-token");
 } catch {
-  /* Storage disabled. */
+  /* 浏览器存储已禁用。 */
 }
 const bootstrap = new URLSearchParams(location.hash.slice(1)).get(
   "qscope-token",
@@ -15,7 +15,7 @@ if (bootstrap && /^[0-9a-f]{64}$/.test(bootstrap)) {
   try {
     sessionStorage.setItem("qscope-token", bootstrap);
   } catch {
-    /* Storage disabled. */
+    /* 浏览器存储已禁用。 */
   }
   history.replaceState(history.state, "", location.pathname + location.search);
 }

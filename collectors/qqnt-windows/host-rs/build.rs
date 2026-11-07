@@ -13,11 +13,7 @@ fn main() {
     for library in ["advapi32", "user32", "shell32", "ole32", "uuid", "ws2_32"] {
         println!("cargo:rustc-link-lib={library}");
     }
-    for file in [
-        "native/session.cpp",
-        "native/guard.cpp",
-        "../../../tools/qq-portable/guard.cpp",
-    ] {
+    for file in ["native/session.cpp", "native/guard.cpp"] {
         println!("cargo:rerun-if-changed={file}");
     }
 }

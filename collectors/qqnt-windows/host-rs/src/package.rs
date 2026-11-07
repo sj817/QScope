@@ -43,9 +43,7 @@ pub struct Extraction {
 }
 
 pub fn identity() -> Result<Identity, Error> {
-    Ok(serde_json::from_str(include_str!(
-        "../../../../tools/qq-portable/client.json"
-    ))?)
+    Ok(serde_json::from_str(include_str!("../../client.json"))?)
 }
 
 fn invalid(message: impl Into<String>) -> Error {

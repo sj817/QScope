@@ -1,4 +1,4 @@
-//! Small Darwin boundary for exact identities and signals to owned children.
+//! Darwin 平台边界负责精确进程身份及受控子进程信号。
 use qscope_automation::Error;
 use std::{
     os::{unix::ffi::OsStringExt, unix::process::CommandExt},
@@ -28,8 +28,7 @@ pub(crate) fn sandbox_denies_write(path: &Path) -> Result<bool, Error> {
     use std::os::unix::ffi::OsStrExt;
     let path = std::ffi::CString::new(path.as_os_str().as_bytes())
         .map_err(|_| Error::new("sandbox", "Sandbox check path contains NUL"))?;
-    // SAFETY: sandbox_check's PATH filter takes one NUL-terminated path.
-    // NO_REPORT avoids diagnostic side effects; this never opens the path.
+    // 安全约束。sandbox_check 的 PATH 筛选接收以 NUL 结尾的路径，NO_REPORT 避免生成诊断副作用。
     let result = unsafe {
         sandbox_check(
             libc::getpid(),
@@ -53,8 +52,7 @@ pub fn identity(pid: u32) -> Result<(String, PathBuf), Error> {
         .ok()
         .filter(|pid| *pid > 0)
         .ok_or_else(|| Error::new("process_identity", "Invalid process PID"))?;
-    // SAFETY: proc_bsdinfo is a C plain-data output structure; its documented
-    // flavor and exact buffer size are passed, and only a complete result is read.
+    // 安全约束。proc_bsdinfo 是 C 数据输出结构，调用时使用文档规定类型和精确缓冲大小，并校验完整返回。
     let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
     let size = std::mem::size_of_val(&info);
     let count = unsafe {
@@ -90,8 +88,7 @@ pub fn identity(pid: u32) -> Result<(String, PathBuf), Error> {
         .and_then(|ticks| ticks.checked_add(FILETIME_EPOCH))
         .ok_or_else(|| Error::new("process_identity", "Darwin process start time overflow"))?;
     let mut image = vec![0u8; 4096];
-    // SAFETY: the writable path buffer remains allocated for the call; the
-    // returned length and terminator are validated before constructing a path.
+    // 安全约束。路径缓冲区在调用期间保持有效，构造路径前校验返回长度及结束符。
     let count = unsafe { libc::proc_pidpath(pid, image.as_mut_ptr().cast(), image.len() as u32) };
     if count <= 0 || count as usize >= image.len() {
         return Err(Error::new(
@@ -115,15 +112,13 @@ pub fn identity(pid: u32) -> Result<(String, PathBuf), Error> {
 }
 
 extern "C" fn request_stop(_signal: libc::c_int) {
-    // AtomicBool is lock-free on the supported ARM64 target; no allocation or
-    // filesystem operation occurs in the signal handler.
+    // 支持的 ARM64 目标上 AtomicBool 无锁，信号处理器仅操作原子状态。
     STOP.store(true, Ordering::Relaxed);
 }
 
 pub(crate) fn install_stop_handler() -> Result<(), Error> {
     STOP.store(false, Ordering::Relaxed);
-    // SAFETY: sigaction is initialized as documented and points at a static
-    // async-signal-safe handler. Only this collector process is affected.
+    // 安全约束。按文档初始化 sigaction，指向静态且异步信号安全的处理器，作用范围限于当前采集器。
     unsafe {
         let mut action: libc::sigaction = std::mem::zeroed();
         action.sa_sigaction = request_stop as *const () as usize;
@@ -158,8 +153,7 @@ pub(crate) fn signal(
         ));
     }
     let pid = pid as i32;
-    // SAFETY: PID and start time have just been validated. A group signal is
-    // allowed only for our still-owned child that is its own group leader.
+    // 安全约束。已核验 PID 和创建时间，仅对仍属自身且为进程组组长的子进程发送组信号。
     unsafe {
         if group && libc::getpgid(pid) != pid {
             return Err(Error::new(
@@ -175,8 +169,7 @@ pub(crate) fn signal(
 }
 
 pub(crate) fn spawn_detached(command: &mut Command) -> Result<Child, Error> {
-    // SAFETY: setsid is async-signal-safe and the closure touches no Rust state
-    // between fork and exec. This only detaches the new collector child.
+    // 安全约束。setsid 满足异步信号安全要求，fork 与 exec 之间仅分离新采集器子进程。
     unsafe {
         command.pre_exec(|| {
             if libc::setsid() == -1 {

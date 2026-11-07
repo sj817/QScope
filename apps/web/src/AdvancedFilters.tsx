@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { terms } from "./labels";
 
 export type Advanced = Record<string, string>;
@@ -15,7 +15,7 @@ export type Chip = {
   next: FilterState;
 };
 
-// Command include/exclude rules live in the command filter; this panel holds the rest.
+// 命令包含与排除规则由命令筛选管理，本面板管理其他条件。
 const fields = [
   ["seq", "精确 SEQ", "十进制整数"],
   ["tid", "线程 ID", ""],
@@ -68,7 +68,7 @@ export function withPattern(
 ): string {
   return [...new Set([...patterns(value), pattern])].join(",");
 }
-// '=' picks one exact command; '*' or '?' match a whole name; other text matches inside a name.
+// = 精确匹配命令，* 和 ? 匹配全名，其他文本匹配名称子串。
 export const exact = (command: string) => `=${command}`;
 export function ruleLabel(pattern: string): string {
   return pattern.startsWith("=")
@@ -85,7 +85,7 @@ function without(advanced: Advanced, key: string): Advanced {
 function timeLabel(value: string) {
   return toLocal(value).replace("T", " ") || value;
 }
-// Local wall time to FILETIME; empty is no bound and a malformed value is null.
+// 将本地时间转换为 FILETIME，空值表示无限制，非法值返回 null。
 function parseLocal(text: string): string | null | undefined {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
@@ -108,7 +108,7 @@ function parseLocal(text: string): string | null | undefined {
   return String(BigInt(date.getTime()) * 10000n + 116444736000000000n);
 }
 
-// Every active condition becomes one removable chip; command lists split per pattern.
+// 每个生效条件对应一个可移除标签，命令列表按规则拆分。
 export function filterChips(state: FilterState): Chip[] {
   const { advanced: a } = state;
   const chips: Chip[] = [];
@@ -187,14 +187,20 @@ export function AdvancedFilters({
     time_to: timeLabel(value.time_to || ""),
   }));
   const [error, setError] = useState("");
-  useEffect(() => {
+  const [previousValue, setPreviousValue] = useState(value);
+  const [previousControls, setPreviousControls] = useState(controls);
+  if (previousValue !== value) {
+    setPreviousValue(value);
     setDraft(value);
     setTimes({
       time_from: value.time_from ? timeLabel(value.time_from) : "",
       time_to: value.time_to ? timeLabel(value.time_to) : "",
     });
-  }, [value]);
-  useEffect(() => setShowControls(controls), [controls]);
+  }
+  if (previousControls !== controls) {
+    setPreviousControls(controls);
+    setShowControls(controls);
+  }
   const set = (key: string, next: string) =>
     setDraft((previous) => ({ ...previous, [key]: next }));
   function submit(event: React.FormEvent) {
@@ -241,7 +247,7 @@ export function AdvancedFilters({
     );
     onClose();
   }
-  // Reset clears this panel only; command rules stay with the command filter.
+  // 重置仅清理本面板条件，命令规则由命令筛选管理。
   function reset() {
     const kept = Object.fromEntries(
       Object.entries(value).filter(

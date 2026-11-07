@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
- * Visual adaptation of ikenxuan/karin-plugin-kkk's DouyinVideoWork,
- * DefaultLayout and AmbientCover (08627f1081567933c82aad2fe5f7b75095687520).
- * Source records: ../vendor/karin-plugin-kkk/source.json.
- * License: ../public/licenses/karin-plugin-kkk-LICENSE.txt.
- * Poster typography and ambience are scaled to an interactive workbench.
+ * 界面视觉改编自 ikenxuan/karin-plugin-kkk 的 DouyinVideoWork、DefaultLayout 和 AmbientCover。
+ * 来源提交为 08627f1081567933c82aad2fe5f7b75095687520。
+ * 源码记录见 ../vendor/karin-plugin-kkk/source.json，许可见 ../public/licenses/karin-plugin-kkk-LICENSE.txt。
+ * 海报排版及氛围效果适配为交互工作台。
  */
 
 :root {
@@ -1051,7 +1050,7 @@ input[type="search"]::-webkit-search-cancel-button {
   }
 }
 
-/* The header is the workspace switcher; packet content starts immediately below. */
+/* 顶栏用于切换工作区，下方直接展示包内容。 */
 .compact-view-switch {
   display: none;
 }
@@ -1615,7 +1614,7 @@ mark {
   background: var(--subtle);
 }
 
-/* Visible controls, JSON-first structure, and Inter tabular numerals. */
+/* 显式操作控件、JSON 层级和 Inter 等宽数字。 */
 body {
   font-family: "Inter", "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif;
 }
@@ -1675,7 +1674,7 @@ button:disabled {
   background: var(--control);
   border-color: var(--line);
 }
-/* Field tree: one 22px line per field in a virtual list, colored like JSON in VS Code. */
+/* 字段树虚拟列表每行 22px，采用编辑器式 JSON 配色。 */
 .json-tree {
   position: relative;
   margin: 4px 0 10px;
@@ -1819,7 +1818,7 @@ button:disabled {
   color: var(--subtle);
   font-size: 11px;
 }
-/* Value actions appear beside the value of the hovered, selected or focused line. */
+/* 悬停、选中或聚焦行的值旁显示操作。 */
 .json-actions {
   display: inline-flex;
   flex-shrink: 0;
@@ -1892,7 +1891,7 @@ button:disabled {
   padding: 0 8px;
   font-size: 11.5px;
 }
-/* The full value opens in a compact reader. */
+/* 完整值使用紧凑阅读器。 */
 .value-dialog {
   width: min(620px, calc(100vw - 32px));
   height: min(440px, calc(100dvh - 40px));
@@ -1928,7 +1927,7 @@ button:disabled {
   padding: 0 10px;
   font-size: 12px;
 }
-/* JSON values read like an editor: monospace, line numbers that stay put, one guide per indent. */
+/* JSON 阅读器采用等宽字体、固定行号及逐层缩进线。 */
 .json-reader {
   flex: 1;
   min-height: 0;
@@ -2127,8 +2126,7 @@ button:disabled {
   }
 }
 
-/* Workbench: list | field tree | raw bytes. Nothing is inserted above content
- * when state changes; filters live in the search box, selection in the footer. */
+/* 工作台由包列表、字段树和原始字节组成。筛选位于搜索框，选择状态位于页脚，避免状态变化挤占内容。 */
 .inspector {
   grid-template-columns: var(--list-width, 30%) 0 minmax(0, 1fr);
 }
@@ -2160,7 +2158,7 @@ button:disabled {
   background: var(--line-active);
 }
 
-/* List pane */
+/* 包列表面板 */
 .list-head {
   position: relative;
   display: flex;
@@ -2404,7 +2402,7 @@ button:disabled {
   font-size: 12px;
 }
 
-/* Command filter: commands seen in this record, or a typed rule. */
+/* 命令筛选支持本记录已有命令及手动规则。 */
 .command-popover {
   position: absolute;
   top: calc(100% + 6px);
@@ -2659,7 +2657,7 @@ button:disabled {
 .packet-row.context-target {
   box-shadow: inset 0 0 0 1px var(--line-active);
 }
-/* Tick boxes exist only while comparing, so normal rows start at the edge. */
+/* 对比模式显示勾选框，普通模式列表行从边缘开始。 */
 .row-check {
   display: flex;
   align-items: center;
@@ -2875,7 +2873,7 @@ button:disabled {
   font-weight: 500;
 }
 
-/* Detail pane: header and tools on the left, raw bytes beside the field tree. */
+/* 详情面板将标题与工具放在左侧，原始字节与字段树并排。 */
 .detail-pane {
   container: detail / inline-size;
   overflow: hidden;
@@ -2896,7 +2894,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
 }
-/* Packet header across the whole detail: identity and actions, then labelled facts. */
+/* 包标题横跨详情区，先显示身份及操作，再显示带标签信息。 */
 .detail-head {
   display: flex;
   flex-direction: column;
@@ -3052,7 +3050,7 @@ button:disabled {
   padding: 0 12px;
   border-bottom: 1px solid var(--line);
 }
-/* The view row keeps the raw bytes caption height so both columns line up. */
+/* 视图行与原始字节标题等高，保证两列对齐。 */
 .tools-view {
   display: flex;
   align-items: center;
@@ -3354,7 +3352,7 @@ button:disabled {
     display: none;
   }
 }
-/* Below that the tree tools take a second row, led by the search. */
+/* 下方第二行放置字段树工具，搜索入口优先。 */
 @container main (max-width: 750px) {
   .tools-tree {
     flex-basis: 100%;
@@ -3414,7 +3412,7 @@ button:disabled {
   font-size: 13px;
 }
 
-/* Menus, notices and empty states. */
+/* 菜单、通知及空状态。 */
 .context-menu {
   position: fixed;
   z-index: 90;
@@ -3592,7 +3590,7 @@ button:disabled {
   overflow: visible;
 }
 
-/* Session bar: accounts and launches. */
+/* 会话栏展示账号及启动记录。 */
 .session-tab {
   position: relative;
 }
@@ -3779,7 +3777,7 @@ button:disabled {
   }
 }
 
-/* Settings: a fixed-size preferences dialog, sections on the left, each section scrolls alone. */
+/* 固定大小的设置对话框在左侧切换区域，各区域独立滚动。 */
 .settings-dialog {
   width: min(860px, calc(100vw - 32px));
   height: min(620px, calc(100dvh - 40px));
@@ -4215,7 +4213,7 @@ button:disabled {
 .settings-pane .inline-error {
   margin: 0;
 }
-/* Runtime check: a quiet line while everything works, a list with fixes when something does not. */
+/* 环境正常时保持单行，异常时展示组件及修复操作。 */
 .runtime-check {
   display: flex;
   flex-direction: column;
@@ -4311,7 +4309,7 @@ button:disabled {
   white-space: normal;
   overflow-wrap: anywhere;
 }
-/* Update settings */
+/* 更新设置 */
 .update-card .qq-card-actions a.text-button {
   display: inline-flex;
   align-items: center;

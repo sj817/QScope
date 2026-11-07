@@ -1,4 +1,4 @@
-//! Owned research-copy lifecycle, hosted by the same qscope-cli executable.
+//! 同一 qscope-cli 承载的受控研究副本生命周期。
 use crate::{common, package, process};
 use qscope_automation::{Error, display_path, runtime};
 use serde::{Deserialize, Serialize};
@@ -354,8 +354,7 @@ fn app_bundles(
                 return Err(common::failure("App symlink escapes the research bundle"));
             }
         } else if kind.is_dir() {
-            // Framework identifiers and signatures remain unchanged. Electron's
-            // helper apps live beside the framework in Contents/Frameworks.
+            // 框架保留原有标识与签名，Electron 辅助应用位于 Contents/Frameworks。
             if path.extension().is_some_and(|value| value == "framework") {
                 continue;
             }

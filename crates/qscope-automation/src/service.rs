@@ -198,7 +198,7 @@ impl Connection {
     pub fn heartbeat(&self) -> Result<(), Error> {
         self.action("heartbeat").map(|_| ())
     }
-    /// Saves running recordings and closes every research QQ, as an update does first.
+    /// 更新前保存录制并关闭全部研究 QQ。
     pub fn close_tasks(&self) -> Result<serde_json::Value, Error> {
         self.client.post_with_timeout(
             "/api/v1/service/control",
@@ -206,8 +206,7 @@ impl Connection {
             Duration::from_secs(90),
         )
     }
-    /// Closes the research QQ started from a QScope page. QQ started by the CLI or an AI, and
-    /// recordings of other producers, keep running.
+    /// 关闭 QScope 页面启动的研究 QQ，CLI、AI 及其他生产者录制分别管理。
     pub fn close_page_qq(&self) -> Result<serde_json::Value, Error> {
         self.client.post_with_timeout(
             "/api/v1/settings/qq/stop",

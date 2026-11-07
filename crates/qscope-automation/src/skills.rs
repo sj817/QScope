@@ -13,6 +13,15 @@ const TEMPLATE: &str = include_str!("../skills/qscope/SKILL.md");
 const MARKER: &str = "\n<!-- qscope-managed ";
 const MAX_SKILL_BYTES: u64 = 256 * 1024;
 
+#[derive(Deserialize)]
+struct SkillMetadata {
+    version: String,
+}
+
+fn skill_version() -> Result<String, Error> {
+    Ok(serde_json::from_str::<SkillMetadata>(include_str!("../skills/qscope/skill.json"))?.version)
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename = "SkillAgent")]
@@ -109,6 +118,12 @@ pub struct SkillStatus {
     pub detail: String,
     pub permissions_path: Option<String>,
     pub permissions_ready: bool,
+    pub version: String,
+    pub installed_version: Option<String>,
+    pub template_sha256: String,
+    pub installed_template_sha256: Option<String>,
+    pub content_sha256: Option<String>,
+    pub installed_content_sha256: Option<String>,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -144,6 +159,22 @@ struct Ownership {
     metadata_sha256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     legacy_permissions: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    template_sha256: Option<String>,
+}
+
+impl Ownership {
+    fn checksum(&self, body: &str) -> Result<String, Error> {
+        Ok(sha256(&serde_json::to_vec(&(
+            body,
+            &self.permissions_allow,
+            self.legacy_permissions.unwrap_or(false),
+            &self.version,
+            &self.template_sha256,
+        ))?))
+    }
 }
 
 pub fn user_home() -> Result<PathBuf, Error> {
@@ -314,11 +345,13 @@ fn ownership(text: &str) -> Option<Ownership> {
     match ownership.schema {
         1 if ownership.permissions_allow.is_empty()
             && ownership.metadata_sha256.is_none()
-            && ownership.legacy_permissions.is_none() =>
+            && ownership.legacy_permissions.is_none()
+            && ownership.version.is_none()
+            && ownership.template_sha256.is_none() =>
         {
             Some(ownership)
         }
-        2 => {
+        2 if ownership.version.is_none() && ownership.template_sha256.is_none() => {
             let metadata = serde_json::to_vec(&(
                 body,
                 &ownership.permissions_allow,
@@ -326,6 +359,17 @@ fn ownership(text: &str) -> Option<Ownership> {
             ))
             .ok()?;
             (ownership.metadata_sha256.as_deref() == Some(sha256(&metadata).as_str()))
+                .then_some(ownership)
+        }
+        3 if ownership
+            .version
+            .as_ref()
+            .is_some_and(|version| !version.is_empty())
+            && ownership.template_sha256.as_ref().is_some_and(|hash| {
+                hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+            }) =>
+        {
+            (ownership.metadata_sha256.as_deref() == Some(ownership.checksum(body).ok()?.as_str()))
                 .then_some(ownership)
         }
         _ => None,
@@ -499,6 +543,7 @@ impl Environment {
             };
         let cli = self.cli.canonicalize()?;
         let body = TEMPLATE
+            .replace("{{SKILL_VERSION}}", &skill_version()?)
             .replace("{{CLI_PATH}}", &serde_json::to_string(&display_path(&cli))?)
             .replace(
                 "{{POWERSHELL_CLI}}",
@@ -521,13 +566,16 @@ impl Environment {
                 &format!("'{}'", server.replace('\\', "/").replace('\'', "'\\''")),
             )
             .replace("{{DEVTOOLS_URL}}", client::DEFAULT_DEVTOOLS);
-        let ownership = Ownership {
-            schema: 1,
+        let mut ownership = Ownership {
+            schema: 3,
             body_sha256: sha256(body.as_bytes()),
             permissions_allow: Vec::new(),
             metadata_sha256: None,
             legacy_permissions: None,
+            version: Some(skill_version()?),
+            template_sha256: Some(sha256(TEMPLATE.as_bytes())),
         };
+        ownership.metadata_sha256 = Some(ownership.checksum(&body)?);
         Ok(format!(
             "{body}{MARKER}{} -->\n",
             serde_json::to_string(&ownership)?
@@ -543,15 +591,34 @@ impl Environment {
         let root = self.root(scope, project)?;
         let path = skill_path(&root, agent, false)?;
         let previous = read_file(&path)?;
+        let owner = previous.as_deref().and_then(ownership);
+        let version = skill_version()?;
+        let template_sha256 = sha256(TEMPLATE.as_bytes());
+        let expected = self.cli.is_file().then(|| self.rendered()).transpose()?;
+        let content_sha256 = expected
+            .as_deref()
+            .and_then(ownership)
+            .map(|owner| owner.body_sha256);
+        let installed_content_sha256 = previous.as_deref().map(|text| {
+            sha256(
+                text.rsplit_once(MARKER)
+                    .map_or(text, |value| value.0)
+                    .as_bytes(),
+            )
+        });
         let (mut state, mut detail) = match previous {
             None => ("missing", "尚未安装"),
             Some(ref text) if ownership(text).is_none() => {
                 ("conflict", "检测到已有或手动修改的技能，请保留后自行处理")
             }
             Some(ref text)
-                if self.cli.is_file()
-                    && text.rsplit_once(MARKER).map(|value| value.0)
-                        == self.rendered()?.rsplit_once(MARKER).map(|value| value.0) =>
+                if owner.as_ref().is_some_and(|owner| {
+                    owner.version.as_deref() == Some(version.as_str())
+                        && owner.template_sha256.as_deref() == Some(template_sha256.as_str())
+                }) && expected.as_ref().is_some_and(|expected| {
+                    text.rsplit_once(MARKER).map(|value| value.0)
+                        == expected.rsplit_once(MARKER).map(|value| value.0)
+                }) =>
             {
                 ("installed", "已安装当前版本")
             }
@@ -579,6 +646,14 @@ impl Environment {
                         detail: error.message,
                         permissions_path: None,
                         permissions_ready: false,
+                        version,
+                        installed_version: owner.as_ref().and_then(|owner| owner.version.clone()),
+                        template_sha256,
+                        installed_template_sha256: owner
+                            .as_ref()
+                            .and_then(|owner| owner.template_sha256.clone()),
+                        content_sha256,
+                        installed_content_sha256,
                     });
                 }
             }
@@ -592,6 +667,14 @@ impl Environment {
             detail: detail.into(),
             permissions_path,
             permissions_ready,
+            version,
+            installed_version: owner.as_ref().and_then(|owner| owner.version.clone()),
+            template_sha256,
+            installed_template_sha256: owner
+                .as_ref()
+                .and_then(|owner| owner.template_sha256.clone()),
+            content_sha256,
+            installed_content_sha256,
         })
     }
 
@@ -636,13 +719,16 @@ impl Environment {
                 ));
             }
             let body = content.rsplit_once(MARKER).expect("generated ownership").0;
-            let owner = Ownership {
-                schema: 2,
+            let mut owner = Ownership {
+                schema: 3,
                 body_sha256: sha256(body.as_bytes()),
                 permissions_allow: rules.clone(),
-                metadata_sha256: Some(sha256(&serde_json::to_vec(&(body, &rules, legacy))?)),
+                metadata_sha256: None,
                 legacy_permissions: legacy.then_some(true),
+                version: Some(skill_version()?),
+                template_sha256: Some(sha256(TEMPLATE.as_bytes())),
             };
+            owner.metadata_sha256 = Some(owner.checksum(body)?);
             content = format!("{body}{MARKER}{} -->\n", serde_json::to_string(&owner)?);
         }
         let target = skill_path(&root, request.agent, true)?;
@@ -1050,7 +1136,10 @@ mod tests {
         };
         for update in [false, true] {
             let installed = environment.install(&request).unwrap();
-            fs::write(&installed.path, environment.rendered().unwrap()).unwrap();
+            let rendered = environment.rendered().unwrap();
+            let (body, _) = rendered.rsplit_once(MARKER).unwrap();
+            let legacy = serde_json::json!({"schema":1,"body_sha256":sha256(body.as_bytes())});
+            fs::write(&installed.path, format!("{body}{MARKER}{legacy} -->\n")).unwrap();
             if update {
                 environment.install(&request).unwrap();
             }
@@ -1072,5 +1161,124 @@ mod tests {
             "integration_limit"
         );
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn skill_version_and_hashes_detect_updates_and_preserve_custom_content() {
+        let directory = tempfile::tempdir().unwrap();
+        let environment = environment(directory.path());
+        let request = SkillRequest {
+            agent: Agent::Codex,
+            scope: Scope::Project,
+            project: None,
+        };
+        let installed = environment.install(&request).unwrap();
+        assert_eq!(
+            installed.installed_version.as_deref(),
+            Some(installed.version.as_str())
+        );
+        assert_eq!(
+            installed.template_sha256,
+            installed.installed_template_sha256.as_deref().unwrap()
+        );
+        assert_eq!(installed.content_sha256, installed.installed_content_sha256);
+        let rendered = fs::read_to_string(&installed.path).unwrap();
+        let (body, _) = rendered.rsplit_once(MARKER).unwrap();
+        let mut owner = ownership(&rendered).unwrap();
+        owner.version = Some("0.0.1".into());
+        owner.template_sha256 = Some("0".repeat(64));
+        owner.metadata_sha256 = Some(owner.checksum(body).unwrap());
+        fs::write(
+            &installed.path,
+            format!(
+                "{body}{MARKER}{} -->\n",
+                serde_json::to_string(&owner).unwrap()
+            ),
+        )
+        .unwrap();
+        let status = environment
+            .inspect(Agent::Codex, Scope::Project, None)
+            .unwrap();
+        assert_eq!(status.state, "update_available");
+        assert_eq!(status.installed_version.as_deref(), Some("0.0.1"));
+        assert_eq!(environment.install(&request).unwrap().state, "installed");
+        owner.version = Some(installed.version.clone());
+        owner.metadata_sha256 = Some(owner.checksum(body).unwrap());
+        fs::write(
+            &installed.path,
+            format!(
+                "{body}{MARKER}{} -->\n",
+                serde_json::to_string(&owner).unwrap()
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            environment
+                .inspect(Agent::Codex, Scope::Project, None)
+                .unwrap()
+                .state,
+            "update_available"
+        );
+        assert_eq!(environment.install(&request).unwrap().state, "installed");
+        fs::write(&installed.path, format!("自定义内容{rendered}")).unwrap();
+        assert_eq!(
+            environment
+                .inspect(Agent::Codex, Scope::Project, None)
+                .unwrap()
+                .state,
+            "conflict"
+        );
+        assert_eq!(
+            environment.install(&request).unwrap_err().code,
+            "skill_conflict"
+        );
+    }
+
+    #[test]
+    fn schema_two_skills_upgrade_with_owned_permissions_intact() {
+        let directory = tempfile::tempdir().unwrap();
+        let environment = environment(directory.path());
+        let request = SkillRequest {
+            agent: Agent::ClaudeCode,
+            scope: Scope::Project,
+            project: None,
+        };
+        let installed = environment.install(&request).unwrap();
+        let text = fs::read_to_string(&installed.path).unwrap();
+        let (body, _) = text.rsplit_once(MARKER).unwrap();
+        let mut owner = ownership(&text).unwrap();
+        let rules = owner.permissions_allow.clone();
+        owner.schema = 2;
+        owner.version = None;
+        owner.template_sha256 = None;
+        owner.metadata_sha256 = Some(sha256(&serde_json::to_vec(&(body, &rules, false)).unwrap()));
+        fs::write(
+            &installed.path,
+            format!(
+                "{body}{MARKER}{} -->\n",
+                serde_json::to_string(&owner).unwrap()
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            environment
+                .inspect(Agent::ClaudeCode, Scope::Project, None)
+                .unwrap()
+                .state,
+            "update_available"
+        );
+        let upgraded = environment.install(&request).unwrap();
+        assert_eq!(upgraded.state, "installed");
+        assert_eq!(
+            ownership(&fs::read_to_string(&installed.path).unwrap())
+                .unwrap()
+                .permissions_allow,
+            rules
+        );
+        environment.uninstall(&request).unwrap();
+        let settings: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(installed.permissions_path.unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(settings["permissions"]["allow"], serde_json::json!([]));
     }
 }

@@ -1,4 +1,4 @@
-# Prettier also skips everything in .gitignore.
+# Prettier 同时跳过 .gitignore 中的文件。
 pnpm-lock.yaml
 apps/web/src/api.generated.ts
 apps/web/public/

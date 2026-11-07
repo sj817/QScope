@@ -6,7 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [features]
-# Online updates: HTTPS downloads and release signature checks, used by the CLI and backend.
+# CLI 与后台共用在线更新的 HTTPS 下载及发布签名校验。
 update = ["dep:base64", "dep:ring", "dep:semver", "reqwest/rustls"]
 
 [dependencies]

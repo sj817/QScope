@@ -15,11 +15,11 @@ const installLabels: Record<string, string> = {
   cli: "仅 CLI",
   development: "开发构建",
 };
-// Stages that change on their own; the panel polls while one is showing.
+// 这些阶段会自行变化，面板显示期间持续轮询。
 const moving = new Set(["checking", "downloading", "closing"]);
 
 type Tasks = { qq: boolean; text: string };
-// What installing would close, read while an install or restart is on offer.
+// 展示安装或重启会关闭的任务。
 function useRunningTasks(watch: boolean): Tasks | null {
   const [tasks, setTasks] = useState<Tasks | null>(null);
   useEffect(() => {
@@ -40,7 +40,7 @@ function useRunningTasks(watch: boolean): Tasks | null {
         (item) => item.state === "recording",
       ).length;
       if (recording) parts.push(`${recording} 段录制`);
-      // Latin letters and digits keep a space from the Chinese conjunction.
+      // 拉丁字母和数字与中文连接词之间保留空格。
       const text = parts.reduce(
         (all, part) =>
           all
@@ -102,9 +102,12 @@ export function UpdatePanel({
   const [error, setError] = useState("");
   const [proxy, setProxy] = useState(update?.proxy || "");
   const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    setProxy(update?.proxy || "");
-  }, [update?.proxy]);
+  const remoteProxy = update?.proxy || "";
+  const [previousProxy, setPreviousProxy] = useState(remoteProxy);
+  if (previousProxy !== remoteProxy) {
+    setPreviousProxy(remoteProxy);
+    setProxy(remoteProxy);
+  }
   useEffect(() => {
     if (!update || !moving.has(update.stage)) return;
     const timer = setTimeout(() => {
@@ -113,7 +116,7 @@ export function UpdatePanel({
         .catch(() => {});
     }, 1000);
     return () => clearTimeout(timer);
-  }, [update]);
+  }, [update, onChange]);
   async function act(path: string, body: unknown = {}) {
     setBusy(true);
     setError("");

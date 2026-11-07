@@ -11,11 +11,11 @@ pub struct DecodeQuery {
     pub format: Option<String>,
     pub offset: Option<usize>,
     pub length: Option<usize>,
-    /// Fields already received, counted in pre-order.
+    /// 按前序遍历计数的已接收字段。
     pub node_offset: Option<usize>,
 }
 
-// Field views arrive in pages of nodes in pre-order, up to a fixed total per packet.
+// 字段视图按前序节点分页，每个包使用固定总量上限。
 const VIEW_PAGE: usize = 2000;
 const VIEW_NODES: usize = 20_000;
 
@@ -33,8 +33,7 @@ impl Budget {
         true
     }
 }
-// Drops the first `skip` nodes in pre-order; ancestors of later nodes stay as shells so the
-// client can attach the new children by id.
+// 跳过前序遍历的前 skip 个节点，保留后续节点的祖先外壳，便于客户端按 ID 拼接子节点。
 fn after(nodes: Vec<FieldNode>, skip: usize, seen: &mut usize) -> Vec<FieldNode> {
     nodes
         .into_iter()

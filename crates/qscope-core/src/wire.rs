@@ -61,7 +61,7 @@ pub struct Message {
     pub fields: Vec<Field>,
     pub complete: bool,
     pub error: Option<DecodeError>,
-    /// Unparsed bytes always remain accessible in the unchanged input.
+    /// 解析失败的字节仍可从原始输入访问。
     pub undecoded: Option<ByteRange>,
 }
 
@@ -103,7 +103,7 @@ pub enum Value {
     },
 }
 
-/// These are simultaneous hypotheses, never recovered schema declarations.
+/// 这些是可同时成立的解释候选。
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Candidates {
     pub utf8: Option<String>,
@@ -125,8 +125,7 @@ struct ParsedMessage {
 }
 
 pub fn decode(input: &[u8], limits: Limits) -> Message {
-    // Even a misconfigured caller cannot turn an untrusted group chain into
-    // unbounded native stack recursion.
+    // 即使调用方配置失误，组链递归仍受到原生栈深度上限约束。
     let limits = Limits {
         max_depth: limits.max_depth.min(64),
         ..limits

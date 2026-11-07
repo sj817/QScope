@@ -11,19 +11,19 @@ use std::{
 
 #[derive(Args)]
 pub struct Options {
-    /// Only report the latest release without downloading it.
+    /// 仅报告最新版本。
     #[arg(long)]
     check: bool,
-    /// Install without asking for confirmation.
+    /// 直接安装更新。
     #[arg(long, short)]
     yes: bool,
-    /// Let the update save running recordings and close research QQ first.
+    /// 更新前保存录制并关闭研究 QQ。
     #[arg(long)]
     close_tasks: bool,
-    /// HTTP proxy for this run only, such as http://127.0.0.1:7890.
+    /// 仅本次运行使用的 HTTP 代理，例如 http://127.0.0.1:7890。
     #[arg(long, conflicts_with = "no_proxy")]
     proxy: Option<String>,
-    /// Connect directly for this run even when a proxy is saved.
+    /// 本次运行使用直连，覆盖已保存的代理设置。
     #[arg(long)]
     no_proxy: bool,
     #[command(subcommand)]
@@ -32,16 +32,16 @@ pub struct Options {
 
 #[derive(Subcommand)]
 enum UpdateCommand {
-    /// Show or change the saved update settings.
+    /// 显示或修改已保存的更新设置。
     Config {
-        /// Saved HTTP proxy for updates; an empty value removes it.
+        /// 保存的 HTTP 更新代理，传入空值可移除。
         #[arg(long)]
         proxy: Option<String>,
-        /// Check for a new release when QScope opens, at most once a day.
+        /// 启动 QScope 时检查更新，每天最多一次。
         #[arg(long)]
         check_on_launch: Option<bool>,
     },
-    /// Opens the new desktop once the replaced one has exited.
+    /// 等待被替换的桌面端退出，再打开新版本。
     #[command(hide = true)]
     Relaunch {
         #[arg(long)]
@@ -66,7 +66,7 @@ fn confirm(version: &str, tasks: Option<&str>) -> Result<bool, Error> {
     Ok(matches!(answer.trim(), "y" | "Y" | "yes"))
 }
 
-// Research QQ and recordings the update would close, as text for the confirmation.
+// 将更新会关闭的研究 QQ 和录制整理为确认文本。
 fn running_tasks(data: &Path) -> Result<Option<String>, Error> {
     if service::connect(data).is_err() {
         return Ok(None);
@@ -82,7 +82,7 @@ fn running_tasks(data: &Path) -> Result<Option<String>, Error> {
             None => "研究 QQ".into(),
         }),
         Ok(_) => {}
-        // More than one research QQ cannot be shown as the current one.
+        // 多个研究 QQ 实例同时运行时，当前实例信息保持未指定。
         Err(_) => tasks.push("研究 QQ".into()),
     }
     let recordings = client.get("/api/v1/recordings", &[])?;
@@ -94,7 +94,7 @@ fn running_tasks(data: &Path) -> Result<Option<String>, Error> {
     if recording > 0 {
         tasks.push(format!("{recording} 段录制"));
     }
-    // Latin letters and digits keep a space from the Chinese conjunction.
+    // 拉丁字母和数字与中文连接词之间保留空格。
     let mut text = String::new();
     for task in tasks {
         if !text.is_empty() {
@@ -111,8 +111,7 @@ fn running_tasks(data: &Path) -> Result<Option<String>, Error> {
     Ok((!text.is_empty()).then_some(text))
 }
 
-// A portable or CLI copy is replaced in place, which needs the old backend gone first so the
-// next start runs the new build. Tasks started after the confirmation still refuse the stop.
+// 便携版和 CLI 原地替换前先退出旧后台，确保下次启动运行新构建。确认后新启动的任务仍会阻止关闭。
 fn stop_backend(data: &Path) -> Result<bool, Error> {
     let Ok(service) = service::connect(data) else {
         return Ok(false);
@@ -225,7 +224,7 @@ pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
         },
         &AtomicBool::new(false),
     )?;
-    // Signature, archive structure, executable identity and bundle integrity all pass first.
+    // 先验证签名、归档结构、可执行文件身份和资源完整性。
     let files = if install != update::Install::Installer {
         Some(update::unpack(&package, install)?)
     } else {
@@ -234,7 +233,7 @@ pub fn run(options: Options, json_output: bool) -> Result<(), Error> {
     if let Some(files) = &files {
         update::preflight(install, &directory, files, &manifest.version)?;
     }
-    // Only a verified package closes them, so a failed download leaves QQ running.
+    // 分发包校验通过后才关闭任务，下载失败时保留 QQ 运行。
     if tasks.is_some() {
         let descriptor = service::connect(&data)?;
         service::Connection::acquire(&data, descriptor)?.close_tasks()?;

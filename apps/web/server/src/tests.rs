@@ -248,8 +248,7 @@ async fn rust_inspector_relays_both_directions_and_removes_disconnected_targets(
         assert!(packet.iter().all(|byte| *byte == index));
     }
     let _writer = burst.await.unwrap();
-    // Opening the same frontend URL in another tab remains an independent
-    // client, even though the route's client ID is identical.
+    // 同一前端 URL 在另一标签页打开时仍是独立客户端，即使路由客户端 ID 相同。
     let (mut observer, _) = connect_async(format!("{socket_base}client/viewer?target=fixture"))
         .await
         .unwrap();
@@ -289,8 +288,7 @@ async fn rust_inspector_relays_both_directions_and_removes_disconnected_targets(
         }
         target
     });
-    // Exceed both the old 16-event broadcast ring and socket buffering before
-    // reading, as a DevTools frontend does while processing its initial DOM.
+    // 读取前先超过旧版 16 事件广播环及套接字缓冲容量，模拟 DevTools 初始 DOM 处理过程。
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     for index in 0..128u8 {
         let packet = tokio::time::timeout(std::time::Duration::from_secs(5), reader.next())
@@ -1001,7 +999,7 @@ async fn qq_setup_requires_the_cli_worker_and_probe() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["launch_version"], 3);
     assert!(body["command"].as_str().unwrap().contains("qscope-cli.exe"));
-    // --resources points at a deployed payload without an embedded archive.
+    // --resources 指向已部署的资源目录。
     let deployed = state
         .runtime
         .resources
@@ -1017,7 +1015,7 @@ async fn qq_setup_requires_the_cli_worker_and_probe() {
     );
 }
 
-/// A synthetic launch: own PID and start time, records rewritten to that PID.
+/// 合成启动使用自身 PID 和创建时间，记录中的 PID 同步改写。
 fn launch(pid: u32, started: u64, records: &[Vec<u8>]) -> Vec<u8> {
     let mut bytes = header();
     bytes[16..20].copy_from_slice(&pid.to_le_bytes());
@@ -1072,7 +1070,7 @@ fn account_is_derived_from_status_records_and_survives_index_restore() {
     assert_eq!(first.summary().accounts, ["10001"]);
     let id = first.summary().id;
     drop(first);
-    // A snapshot written before account fields existed restores them from status metadata.
+    // 缺少账号字段的旧快照应从状态元数据恢复账号。
     let (mut snapshot, entries) = index.load(&id).unwrap().unwrap();
     snapshot.summary.account = None;
     snapshot.summary.accounts.clear();
@@ -1162,7 +1160,7 @@ fn recording_window_inherits_the_account_observed_before_it_started() {
 #[tokio::test]
 async fn account_view_concatenates_launches_with_original_identities_and_cursors() {
     let (dir, mut state, _) = setup();
-    // Production canonicalizes the imports root before serving.
+    // 生产环境在提供服务前会规范化导入根目录。
     state.imports = state.imports.canonicalize().unwrap();
     let base = 134383000000000000u64;
     let packets = |first: u64, count: u64, prefix: &str| -> Vec<Vec<u8>> {
@@ -1191,7 +1189,7 @@ async fn account_view_concatenates_launches_with_original_identities_and_cursors
         launch(303, base + 3_000, &other),
     )
     .unwrap();
-    // An imported copy with the same account never joins the launch view.
+    // 同账号的导入副本在启动视图之外单独保存。
     fs::write(
         state.imports.join("copy.qscap"),
         launch(304, base + 4_000, &first),
@@ -1345,7 +1343,7 @@ fn command_suggestions_count_packets_by_frequency_and_skip_control_records() {
 fn field_pages_continue_inside_nested_messages_and_stop_at_the_view_cap() {
     let (dir, _state, _) = setup();
     let path = dir.path().join("pages.qscap");
-    // 1500 top-level varints, then one message candidate holding 600 more fields.
+    // 1500 个顶层变长整数后跟一个含 600 个字段的消息候选。
     let inner = [8u8, 0x80, 1].repeat(600);
     let mut payload = [8u8, 1].repeat(1500);
     payload.extend([0x12, 0x88, 0x0e]);
@@ -1366,7 +1364,7 @@ fn field_pages_continue_inside_nested_messages_and_stop_at_the_view_cap() {
     let second = decode::detail(capture.event(1).unwrap(), &query(Some(2000))).unwrap();
     assert_eq!(second.next_node_offset, None);
     assert!(!second.view_limited);
-    // Only the parent field and its candidate return as shells around the remaining fields.
+    // 父字段和候选仅作为外壳包围剩余字段返回。
     assert_eq!(second.nodes.len(), 1);
     assert_eq!(second.nodes[0].id, "pb.1500");
     let candidate = &second.nodes[0].children[0];
@@ -1413,7 +1411,7 @@ async fn runtime_health_names_what_is_missing_and_how_each_part_can_be_fixed() {
             })
             .collect()
     };
-    // A development layout without a build or a QQ download.
+    // 尚未构建产品及下载 QQ 的开发目录布局。
     let (status, health) = api(state.clone(), "/api/v1/settings/qq/health").await;
     assert_eq!(status, StatusCode::OK);
     let found = parts(&health);
@@ -1433,7 +1431,7 @@ async fn runtime_health_names_what_is_missing_and_how_each_part_can_be_fixed() {
     assert_eq!(found[3], ("qq".into(), "pending".into(), "none".into()));
     assert_eq!(health["healthy"], false);
     assert_eq!(health["repairable"], false);
-    // Unpacked QQ files that differ from the pinned modules can be unpacked again.
+    // 解包文件与固定模块身份不符时，可重新解包修复。
     let files = qscope_automation::runtime::qq_package(&dir.path().join("artifacts")).join(
         if cfg!(target_os = "macos") {
             "unpacked/QQ.app"
@@ -1477,7 +1475,7 @@ async fn update_settings_keep_only_plain_http_proxies_and_unsigned_builds_do_not
     assert_eq!(update["proxy"], "http://127.0.0.1:7890");
     assert_eq!(update["check_on_launch"], false);
     assert!(dir.path().join("artifacts/settings/update.json").is_file());
-    // A launch check stays quiet; an explicit one says why this build cannot update.
+    // 启动时的自动检查保持安静，显式检查则说明当前构建无法更新的原因。
     let (status, update) = post(
         state.clone(),
         "/api/v1/update/check",

@@ -1,5 +1,5 @@
-//! Explicit TLV16-BE and JCE/Tars views of unchanged bytes. No format guessing.
-//! JCE wire types: https://tarscloud.github.io/TarsDocs/base/tars-protocol.html
+//! 对原始字节显式选择 TLV16-BE 或 JCE/Tars 视图。
+//! JCE 线类型依据 https://tarscloud.github.io/TarsDocs/base/tars-protocol.html。
 use crate::{data::to_hex, wire::ByteRange};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -235,8 +235,7 @@ fn decode(
 pub fn jce(bytes: &[u8]) -> Report {
     decode(bytes, "jce", |cursor| cursor.field(0))
 }
-/// A stream of 16-bit tag + 16-bit value length, both big-endian. The caller
-/// selects the TLV stream boundary; WTLogin outer headers are not stripped.
+/// 流由大端 16 位标签和大端 16 位值长度组成，调用方指定 TLV 边界，WTLogin 外层头部按原状保留。
 pub fn tlv16be(bytes: &[u8]) -> Report {
     decode(bytes, "tlv16be", |cursor| {
         if cursor.fields >= MAX_FIELDS {

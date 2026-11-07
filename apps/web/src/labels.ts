@@ -1,6 +1,6 @@
 import type { ApiError, Session } from "./api.generated";
 
-// One-line explanations for terms a first-time user meets in the workspace.
+// 为首次接触工作区术语的用户提供单行解释。
 export const terms = {
   pid: "PID：操作系统给这次 QQ 进程分配的编号，结合进程出生标识区分不同启动，编号可能被复用。",
   seq: "SEQ：QQ 为每个请求分配的序号，可以在搜索框里精确查找。",
@@ -89,7 +89,7 @@ export function recordState(session: Session): {
   };
 }
 
-// Transient reading state beside the row count; how the record ended belongs to its tab.
+// 行数旁展示临时读取状态，抓包结束方式由标签展示。
 export function readingNote(session: Session): string {
   if (session.has_more) return "正在建立索引…";
   if (session.partial_tail) return "最后一条正在写入";
@@ -130,7 +130,7 @@ export function friendlyError(error: ApiError | string): {
   }
 }
 
-// QQ numbers stay strings. Masking is a display choice only.
+// QQ 号码始终保存为字符串，掩码仅作用于显示。
 export function maskAccount(value: string): string {
   if (value.length >= 6) return `${value.slice(0, 2)}****${value.slice(-2)}`;
   if (value.length >= 3)
@@ -152,6 +152,6 @@ export function writePreference(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
   } catch {
-    /* Private browser storage may be disabled. */
+    /* 隐私浏览模式可能禁用本地存储。 */
   }
 }

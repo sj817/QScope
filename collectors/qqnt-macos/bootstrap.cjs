@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-require-imports -- Electron's package.main loads CommonJS before QQ's original entry. */
+/* eslint-disable @typescript-eslint/no-require-imports -- Electron 的 package.main 在 QQ 原入口前加载 CommonJS。 */
 "use strict";
 
-// Deploy beside package.json, qscope-original-main.json and the unchanged
-// Windows automation.js copied as qscope-automation.cjs. No QQ APIs are replaced.
+// 与 package.json 和 qscope-original-main.json 同目录部署，复用的 Windows automation.js 命名为 qscope-automation.cjs。
 (() => {
   const fs = require("node:fs");
   const path = require("node:path");
@@ -26,8 +25,7 @@
     return path.resolve(value);
   }
 
-  // Do not canonicalize through links: the launcher sandbox names this exact
-  // isolated tree, and following a linked directory could escape it.
+  // 按启动器约定校验隔离树的原始路径，阻止通过目录链接逃逸。
   function noLinks(filename, allowMissing = false) {
     const root = path.parse(filename).root;
     const parts = filename.slice(root.length).split(path.sep).filter(Boolean);
@@ -88,7 +86,7 @@
 
   function readJson(filename, optional = false) {
     if (optional && !fs.existsSync(filename)) {
-      // existsSync also returns false for a dangling link, which must fail.
+      // 悬空链接也会使 existsSync 返回 false，需要单独拒绝。
       try {
         fs.lstatSync(filename);
       } catch (error) {
@@ -161,7 +159,7 @@
   let identity;
   try {
     if (size < 64) fail("probe output has no complete QSCAP01 header");
-    // The capture is still being appended to. Never read packet bodies here.
+    // 抓包仍在追加，此处仅检查元数据。
     const header = readExactly(descriptor, 64);
     if (
       !header.subarray(0, 8).equals(Buffer.from("QSCAP01\0")) ||
@@ -235,7 +233,7 @@
   ) {
     fail("original entry cannot load a QScope bootstrap or automation bridge");
   }
-  // Electron's fs supports paths inside ASAR archives; Node tests use a directory.
+  // Electron 文件系统支持 ASAR 内部路径，Node 测试使用普通目录。
   if (!fs.statSync(entry).isFile())
     fail("original entry is not a regular file");
 
@@ -262,7 +260,7 @@
     path.join(directories.home, "Library", "Preferences"),
   ];
   const allDirectories = [...Object.values(directories), ...extraDirectories];
-  // Validate all existing components before creating any directories.
+  // 创建目录前先验证全部已有路径组件。
   for (const directory of allDirectories) noLinks(directory, true);
   for (const directory of allDirectories) {
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -271,7 +269,7 @@
       fail(`not a directory: ${directory}`);
   }
 
-  // Preserve the original application name with an isolated bundle ID and HOME.
+  // 保留原应用名称，使用独立应用标识和 HOME。
   app.setName("QQ");
   for (const [name, directory] of Object.entries(directories)) {
     app.setPath(name, directory);

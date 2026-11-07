@@ -17,8 +17,7 @@ using namespace qscope_probe;
 constexpr unsigned queue_capacity = 32;
 constexpr std::uint64_t file_limit = 256ull * 1024 * 1024;
 constexpr std::uint32_t account_limit = 32;
-// The account value travels beside the packet. It is written as a separate
-// status record when it changes, never inside the packet record.
+// 账号值随包传递，变化时单独写入状态记录。
 struct PacketData {
     Record record; std::uint32_t account_length, account_type; unsigned char account[account_limit];
     unsigned char command[command_limit]; unsigned char payload[payload_limit];
@@ -62,8 +61,7 @@ bool read_u64(std::uintptr_t address, std::uint64_t& value) noexcept {
     return copy_memory(&value, reinterpret_cast<void*>(address), sizeof(value));
 }
 bool qq_string(std::uintptr_t address, unsigned char* destination, std::uint32_t& length, std::uint32_t limit = command_limit) noexcept {
-    // 54395 wrapper.node's 24-byte libc++ string. Confirmed from its copy
-    // routine and the MSF send/receive callers, rather than the host C++ ABI.
+    // 54395 wrapper.node 使用 24 字节 libc++ 字符串，布局依据其复制例程及 MSF 收发调用点验证。
     std::uint64_t words[3];
     if(!copy_memory(words, reinterpret_cast<void*>(address), sizeof(words))) return false;
     std::uint64_t n = (words[0] & 1) ? words[1] : (words[0] & 0xff) >> 1;
@@ -104,7 +102,7 @@ void completion_marker(bool success) {
     if(file!=INVALID_HANDLE_VALUE) { const char* status=success?"closed":"write_failed"; DWORD n=0;WriteFile(file,status,static_cast<DWORD>(std::strlen(status)),&n,nullptr);CloseHandle(file); }
 }
 bool control_record(std::uint16_t kind, const char* text, std::uint32_t code = 0) {
-    // Small control records are written only by the worker or during prepare.
+    // 小型控制记录仅由工作线程或准备阶段写入。
     Record r = record_header(kind);
     r.command_length = static_cast<std::uint32_t>(std::strlen(text));
     r.total_size = sizeof(Record) + r.command_length;
@@ -155,8 +153,7 @@ bool copy_packet(PacketData& slot, void** owner, bool outbound, std::uint32_t er
         || !read_u64(vector, begin) || !read_u64(vector + 8, end) || !read_u64(vector + 16, capacity)) return false;
     if(end < begin || capacity < end || end-begin > 64ull * 1024 * 1024 || (begin == 0 && end != 0)) return false;
     if(outbound) {
-        // Hypothesis from the send RVA's "uin:{} uin_type:{}" log call. A value
-        // outside the bounded identifier alphabet is dropped, not the packet.
+        // 账号布局假设来自发送函数的 uin 与 uin_type 日志，非法账号值单独丢弃，原始包照常保留。
         std::uint32_t type = 0;
         if(!copy_memory(&type, reinterpret_cast<void*>(packet + qscope_profile::send_account_type_offset), sizeof(type))
             || !qq_string(packet + qscope_profile::send_account_offset, slot.account, slot.account_length, account_limit)) slot.account_length = 0;
@@ -257,7 +254,7 @@ DWORD WINAPI writer(void*) {
     VirtualFree(scratch, 0, MEM_RELEASE);
     completion_marker(!failed);
     SetEvent(completed);
-    // The DLL and queue stay resident until QQ exits. No loader-lock cleanup.
+    // DLL 和队列驻留至 QQ 退出，清理由进程地址空间回收完成。
     return failed ? 1 : 0;
 }
 std::wstring environment(const wchar_t* name) {
@@ -309,13 +306,22 @@ void qscope_capture_module_loaded(HMODULE module) {
     if(_wcsicmp(slash?slash+1:path,L"wrapper.node") != 0) return;
     long expected=0;
     if(!install_state.compare_exchange_strong(expected,1)) return;
-    // Profile: 9.9.37-54395 win32.x64, wrapper SHA256 fed532ad...d7d4a2.
-    // The native QQ host verifies the complete module hash before launch.
-    // IDA evidence: artifacts/.../analysis/msf-54395/{locate-raw,decompile,layout}.json.
+    // 布局对应 Windows x64 QQ 9.9.37-54395，模块身份及唯一字符串引用由宿主验证，实际地址通过本次扫描传入。
     auto* base=reinterpret_cast<unsigned char*>(module);
     using namespace qscope_profile;
+    const auto target_rva = [](const wchar_t* name) -> unsigned long {
+        const auto value = environment(name);
+        if(value.empty() || value.size() > 10) return 0;
+        for(const auto ch : value) if(ch < L'0' || ch > L'9') return 0;
+        wchar_t* end = nullptr;
+        const auto rva = std::wcstoull(value.c_str(), &end, 10);
+        return end && !*end && rva <= 0xffffffffull ? static_cast<unsigned long>(rva) : 0;
+    };
+    const auto send_rva = target_rva(L"QSCOPE_SEND_RVA");
+    const auto recv_rva = target_rva(L"QSCOPE_RECV_RVA");
     unsigned char actual[32];
-    if(!copy_memory(actual,base+send_rva,32) || std::memcmp(actual,send_prefix,32)
+    if(!send_rva || !recv_rva || send_rva == recv_rva
+        || !copy_memory(actual,base+send_rva,32) || std::memcmp(actual,send_prefix,32)
         || !copy_memory(actual,base+recv_rva,32) || std::memcmp(actual,recv_prefix,32)) {
         enqueue_status("module_profile_rejected"); install_state.store(-1); return;
     }

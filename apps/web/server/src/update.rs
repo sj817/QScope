@@ -1,5 +1,4 @@
-// Online updates through the backend, so the desktop and the browser share one download and
-// one state. Recordings and research QQ are closed only after the new package is verified.
+// 桌面和浏览器共享后台更新下载及状态，分发包校验完成后才关闭录制和研究 QQ。
 use crate::{
     ApiError, AppState, blocking,
     contract::{UpdateSettingsRequest, UpdateStatus},
@@ -81,7 +80,7 @@ fn set(manager: &Arc<Mutex<Manager>>, change: impl FnOnce(&mut Manager)) {
 
 #[derive(Deserialize, Default)]
 pub struct CheckRequest {
-    /// A launch check, skipped when one ran within the last day or launch checks are off.
+    /// 启动检查受设置控制，每天最多运行一次。
     #[serde(default)]
     auto: bool,
 }
@@ -171,8 +170,7 @@ fn preparing(state: &AppState) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// Ends what keeps the old build in use before it is replaced: recordings are saved and each
-/// running research QQ is closed through its owner, so its capture ends with a footer.
+/// 替换程序前保存录制，并通过各自启动器关闭研究 QQ，让抓包写入结束标记。
 pub(crate) async fn close_tasks(state: &AppState) -> Result<Value, ApiError> {
     preparing(state)?;
     let recordings = {
@@ -202,7 +200,7 @@ pub(crate) async fn close_tasks(state: &AppState) -> Result<Value, ApiError> {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    // Only copies whose bridge still answers are running; a stale connection file is left alone.
+    // 以控制桥实际响应为运行依据，过期连接文件按原状保留。
     let running = blocking({
         let state = state.clone();
         move || {
@@ -234,9 +232,7 @@ pub(crate) async fn close_tasks(state: &AppState) -> Result<Value, ApiError> {
     Ok(json!({"schema_version":1,"recordings":recordings,"qq":closed}))
 }
 
-/// Downloads and verifies the new release while QQ keeps running, then closes the running
-/// tasks and starts installing it. A setup package takes over from there; a portable package
-/// waits for `restart`.
+/// 下载校验期间 QQ 继续运行，验证通过后关闭任务并安装。安装版交由安装器接管，便携版等待 restart。
 pub async fn install(State(state): State<AppState>) -> Result<Json<UpdateStatus>, ApiError> {
     preparing(&state)?;
     let (install, directory) = update::locate()?;
@@ -323,7 +319,7 @@ async fn apply(
     } else {
         None
     };
-    // Desktop bundles are replaced on restart, which closes their tasks then.
+    // 桌面应用包在重启时替换，并在该阶段关闭所属任务。
     if !install.needs_restart() {
         set(&state.update, |manager| manager.stage = "closing".into());
         close_tasks(state).await?;
@@ -336,7 +332,7 @@ async fn apply(
                 ("installing", package)
             }
             update::Install::Cli => {
-                // The CLI copy runs this backend; the next start uses the new files.
+                // 当前后台由 CLI 副本承载，下次启动使用替换后的文件。
                 let files = prepared.expect("verified CLI files");
                 update::replace(&directory, &files)?;
                 update::refresh_global_command(&directory);
@@ -351,7 +347,7 @@ async fn apply(
     .await
 }
 
-/// Replaces a portable copy, then stops this backend; the desktop closes and the new one opens.
+/// 替换便携副本后停止当前后台，旧桌面退出后打开新桌面。
 pub async fn restart(State(state): State<AppState>) -> Result<Json<UpdateStatus>, ApiError> {
     let (install, directory) = update::locate()?;
     let (files, version) = {

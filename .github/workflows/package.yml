@@ -1,0 +1,50 @@
+name: platform packages
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            platform: windows-x64
+          - os: macos-15
+            platform: macos-arm64
+    env:
+      CARGO_BUILD_JOBS: "2"
+      APPLE_SIGNING_IDENTITY: "-"
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: 准备开发环境
+        uses: ./.github/actions/setup
+      - name: 校验发布版本
+        run: pnpm release version
+      - name: 构建桌面、命令行和安装包
+        run: pnpm build
+      - name: 验证原生采集合成数据
+        run: pnpm test:native
+      - name: 验证分发包
+        run: pnpm test:packaged
+      - name: 验证 Mac 更新与回滚备份
+        run: pnpm test:update
+        if: runner.os == 'macOS'
+      - name: 收集并校验平台资产
+        run: pnpm release collect --platform ${{ matrix.platform }} --out build/release-assets
+      - name: 保存平台分发包
+        uses: actions/upload-artifact@v7
+        with:
+          name: qscope-release-${{ matrix.platform }}
+          path: build/release-assets
+          if-no-files-found: error
+          retention-days: 7

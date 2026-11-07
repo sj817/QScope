@@ -1,5 +1,4 @@
-/* Original font binaries, served locally and unmodified. License notices are
- * shipped in public/licenses/ and linked from the workbench footer. */
+/* 本机提供原始字体文件，许可声明位于 public/licenses/，入口见工作台页脚。 */
 @font-face {
   font-family: "HarmonyOS Sans SC";
   src: url("../node_modules/@lobehub/webfont-harmony-sans-sc/fonts/HarmonyOS_Sans_SC_Regular.woff2")

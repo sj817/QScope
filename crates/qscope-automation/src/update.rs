@@ -1,6 +1,4 @@
-//! Online updates from GitHub Releases. Each release publishes `qscope-update.json`, which
-//! lists the size and SHA256 of every package, and `qscope-update.json.sig`, an Ed25519
-//! signature over the exact manifest bytes. Only a manifest signed by `RELEASE_KEY` is used.
+//! 通过 GitHub Releases 在线更新。平台清单记录每个包的大小和 SHA256，配套 Ed25519 签名覆盖清单原始字节，并使用 RELEASE_KEY 验证。
 
 use crate::{Error, runtime};
 use base64::Engine as _;
@@ -19,8 +17,7 @@ use std::{
 mod macos;
 
 pub const REPOSITORY: &str = "sj817/QScope";
-/// Base64 of the raw 32-byte Ed25519 public key that signs release manifests. While it is
-/// empty this build has no trusted key and online updates stay off.
+/// 发布清单签名公钥为 32 字节 Ed25519 原始公钥的 Base64，空值表示该构建尚未配置可信更新公钥。
 pub const RELEASE_KEY: &str = "T8/Uu63zwJsaS0Hl3dsiFZzHSBs937j22pMdAFnZjJ4=";
 pub const MANIFEST: &str = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
     "qscope-update-macos-arm64.json"
@@ -49,15 +46,15 @@ pub struct Asset {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Install {
-    /// The complete signed macOS application bundle.
+    /// 完整且已签名的 macOS 应用包。
     App,
-    /// Installed by the setup program, which can replace a running copy.
+    /// 由安装器维护的安装副本，支持替换正在运行的文件。
     Installer,
-    /// The desktop and CLI unpacked side by side.
+    /// 并排解压的桌面与 CLI。
     Portable,
-    /// The CLI alone.
+    /// 独立 CLI 副本。
     Cli,
-    /// A build in the source tree.
+    /// 源码树内的开发构建。
     Development,
 }
 
@@ -92,13 +89,13 @@ pub const fn supported() -> bool {
     ))
 }
 
-/// The install type of a product directory.
+/// 产品目录的安装类型。
 pub fn classify(directory: &Path) -> Install {
     let name = |path: Option<&Path>| {
         path.and_then(Path::file_name)
             .map(|name| name.to_string_lossy().to_lowercase())
     };
-    // Test and example binaries live below target/<profile>/, so any such ancestor counts.
+    // 测试和示例程序位于 target/<profile> 下，任意匹配祖先均标记为开发构建。
     let development = directory.ancestors().any(|path| {
         matches!(name(Some(path)).as_deref(), Some("debug" | "release"))
             && name(path.parent()).as_deref() == Some("target")
@@ -120,8 +117,7 @@ pub fn classify(directory: &Path) -> Install {
     }
 }
 
-/// The directory and install type of the running product. The global `qs` command is a copy
-/// whose ownership record names the CLI it came from.
+/// 运行产品的目录及安装类型，全局 qs 的归属记录指向其来源 CLI。
 pub fn locate() -> Result<(Install, PathBuf), Error> {
     let executable = std::env::current_exe()?;
     let mut directory = executable
@@ -164,7 +160,7 @@ pub fn cli_path(directory: &Path) -> PathBuf {
     }
 }
 
-/// Check the installed destination and staged bundle before interrupting research tasks.
+/// 中断研究任务前先检查安装目标及暂存应用包。
 pub fn preflight(
     install: Install,
     directory: &Path,
@@ -229,7 +225,7 @@ pub fn now() -> u64 {
     runtime::unix_now()
 }
 
-/// A launch checks again once a day at most.
+/// 启动更新检查每天最多一次。
 pub fn due(settings: &Settings) -> bool {
     settings.check_on_launch
         && settings
@@ -237,8 +233,7 @@ pub fn due(settings: &Settings) -> bool {
             .is_none_or(|last| now().saturating_sub(last) >= 24 * 60 * 60)
 }
 
-/// Normalizes an update proxy. Only plain `http://host:port` proxies are accepted; HTTPS
-/// downloads go through them with CONNECT.
+/// 规范化更新代理，仅接受 http://host:port，HTTPS 下载通过 CONNECT 隧道传输。
 pub fn proxy(text: &str) -> Result<Option<String>, Error> {
     let text = text.trim();
     if text.is_empty() {
@@ -264,7 +259,7 @@ pub fn proxy(text: &str) -> Result<Option<String>, Error> {
     Ok(Some(format!("http://{host}:{port}")))
 }
 
-// Release files come from github.com and its download host only.
+// 发布文件来源限定为 github.com 及其下载主机。
 fn trusted(url: &reqwest::Url) -> bool {
     url.scheme() == "https"
         && url.username().is_empty()
@@ -275,7 +270,7 @@ fn trusted(url: &reqwest::Url) -> bool {
 }
 
 fn client(proxy: Option<&str>) -> Result<reqwest::blocking::Client, Error> {
-    // Async read_timeout creates a Tokio timer when polled by a plain blocking thread.
+    // 普通阻塞线程轮询异步 read_timeout 时会创建 Tokio 计时器。
     let builder = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(30))
@@ -380,7 +375,7 @@ fn validate(manifest: &Manifest) -> Result<(), Error> {
     Ok(())
 }
 
-/// Checks the signature over the manifest bytes with a base64 Ed25519 public key.
+/// 使用 Base64 Ed25519 公钥验证清单原始字节签名。
 pub fn verify(key: &str, manifest: &[u8], signature: &[u8]) -> Result<Manifest, Error> {
     let engine = base64::engine::general_purpose::STANDARD;
     let key = engine
@@ -405,7 +400,7 @@ pub fn newer(candidate: &str, current: &str) -> Result<bool, Error> {
     Ok(semver(candidate)? > semver(current)?)
 }
 
-/// Reads and verifies the latest release manifest.
+/// 读取并验证最新发布清单。
 pub fn check(proxy: Option<&str>) -> Result<Manifest, Error> {
     if RELEASE_KEY.is_empty() {
         return Err(Error::new(
@@ -451,11 +446,13 @@ pub fn asset(manifest: &Manifest, install: Install) -> Result<&Asset, Error> {
         .find(|asset| asset.kind == kind)
         .ok_or_else(|| Error::new("update_asset", "这个版本没有适合当前安装方式的更新包"))?;
     if cfg!(target_os = "macos") && matches!(install, Install::App | Install::Cli) {
-        let expected = match install {
-            Install::App => format!("QScope-{}-macos-arm64.zip", manifest.version),
-            _ => format!("QScope-{}-macos-arm64-cli-webui.zip", manifest.version),
+        let suffix = match install {
+            Install::App => "macos-arm64.zip",
+            _ => "macos-arm64-cli-webui.zip",
         };
-        if asset.name != expected {
+        if asset.name != format!("QScope-{suffix}")
+            && asset.name != format!("QScope-{}-{suffix}", manifest.version)
+        {
             return Err(Error::new(
                 "update_asset",
                 "更新包的平台、架构或版本与当前安装不符",
@@ -465,8 +462,7 @@ pub fn asset(manifest: &Manifest, install: Install) -> Result<&Asset, Error> {
     Ok(asset)
 }
 
-/// Downloads the package for this install type into `data/updates/<version>/` and checks it
-/// against the signed manifest. `progress` receives the bytes received so far.
+/// 按安装类型下载到 data/updates/<version> 并校验签名清单，progress 接收已下载字节数。
 pub fn download(
     manifest: &Manifest,
     install: Install,
@@ -541,7 +537,7 @@ pub fn download(
     Ok(target)
 }
 
-/// Unpacks a portable or CLI package. The archive must hold exactly the product executables.
+/// 解压便携版或 CLI，归档必须恰好包含规定的产品可执行文件。
 pub fn unpack(package: &Path, install: Install) -> Result<Vec<(String, PathBuf)>, Error> {
     #[cfg(target_os = "macos")]
     if matches!(install, Install::App | Install::Cli) {
@@ -590,9 +586,7 @@ pub fn unpack(package: &Path, install: Install) -> Result<Vec<(String, PathBuf)>
     Ok(files)
 }
 
-/// Replaces executables in `directory`. Windows lets a running executable be renamed, so each
-/// one moves aside to `<name>.old` and the new copy takes its name; any failure restores the
-/// previous files.
+/// 替换 directory 中的可执行文件。Windows 允许重命名运行中的文件，先移到 <name>.old，再写入新副本，失败时恢复旧文件。
 pub fn replace(directory: &Path, files: &[(String, PathBuf)]) -> Result<(), Error> {
     #[cfg(target_os = "macos")]
     if let [(name, source)] = files
@@ -662,8 +656,7 @@ fn same_file(left: &Path, right: &Path) -> bool {
     normal(left) == normal(right)
 }
 
-// The global qs command is a copy of the installed CLI; register the new one in its place.
-// A running qs can only be renamed, so it moves aside first.
+// 用新 CLI 更新全局 qs，运行中的 qs 先重命名移开。
 pub fn refresh_global_command(directory: &Path) -> serde_json::Value {
     let Ok(home) = crate::skills::user_home() else {
         return serde_json::json!(null);
@@ -702,8 +695,7 @@ pub fn refresh_global_command(directory: &Path) -> serde_json::Value {
     serde_json::json!({"refreshed":refreshed})
 }
 
-/// Starts the downloaded setup program. It stops an idle backend, closes the desktop, installs
-/// over the current copy and opens QScope again.
+/// 启动下载的安装器，停止空闲后台、关闭桌面、覆盖安装后重新打开 QScope。
 pub fn start_installer(package: &Path) -> Result<(), Error> {
     Command::new(package)
         .args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/RELAUNCH=1"])
@@ -712,7 +704,7 @@ pub fn start_installer(package: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Asks the desktop to close once its backend stops for an update.
+/// 后台为更新停止后请求桌面退出。
 pub fn mark_restart(data: &Path, version: &str) -> Result<(), Error> {
     runtime::write_settings(
         &data.join(runtime::RESTART_MARKER),
@@ -747,7 +739,7 @@ pub fn start_relaunch(directory: &Path, data: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Waits until the replaced desktop and backend have exited, then opens the new desktop.
+/// 等待被替换桌面及后台退出，再打开新桌面。
 pub fn relaunch(directory: &Path, data: &Path) -> Result<(), Error> {
     #[cfg(target_os = "macos")]
     {
@@ -825,6 +817,12 @@ mod tests {
         let (key, bytes, signature) = signed(&value);
         let valid = verify(&key, &bytes, &signature).unwrap();
         assert!(asset(&valid, Install::Cli).is_ok());
+        value["assets"][0]["name"] = "QScope-0.2.0-macos-arm64-cli-webui.zip".into();
+        let (key, bytes, signature) = signed(&value);
+        assert!(asset(&verify(&key, &bytes, &signature).unwrap(), Install::Cli).is_ok());
+        value["assets"][0]["name"] = "QScope-0.3.0-macos-arm64-cli-webui.zip".into();
+        let (key, bytes, signature) = signed(&value);
+        assert!(asset(&verify(&key, &bytes, &signature).unwrap(), Install::Cli).is_err());
         value["assets"][0]["name"] = "QScope-0.2.0-windows-x64-cli-webui.zip".into();
         let (key, bytes, signature) = signed(&value);
         let wrong = verify(&key, &bytes, &signature).unwrap();
@@ -846,9 +844,9 @@ mod tests {
 
     fn manifest() -> serde_json::Value {
         let name = if cfg!(target_os = "macos") {
-            "QScope-0.2.0-macos-arm64-cli-webui.zip"
+            "QScope-macos-arm64-cli-webui.zip"
         } else {
-            "QScope-0.2.0-windows-x64-cli-webui.zip"
+            "QScope-windows-x64-cli-webui.zip"
         };
         serde_json::json!({"schema_version":1,"product":"qscope","version":"0.2.0","notes_url":"https://github.com/sj817/QScope/releases/tag/v0.2.0","assets":[{"kind":"cli","name":name,"bytes":10,"sha256":"a".repeat(64)}]})
     }
@@ -879,7 +877,7 @@ mod tests {
         );
     }
 
-    // Signed by tools/release-sign.ts with a throwaway key, so both sides agree on the format.
+    // 使用临时密钥通过 scripts/release-sign.ts 签名，验证两端格式一致。
     #[test]
     fn manifests_signed_by_the_release_tool_verify() {
         let key = "TvfTaDVqFJyKZP7nI/paRoe2a2LzwrFuS7+3RxVAjPQ=";
@@ -1021,7 +1019,7 @@ mod tests {
         );
         runtime::cleanup_replaced(&product);
         assert!(!product.join("qscope-cli.exe.old").exists());
-        // A second file that cannot move restores the first.
+        // 第二个文件移动失败时恢复第一个文件。
         fs::create_dir(product.join("qscope-cli.exe.old")).unwrap();
         let next = vec![
             ("QScope.exe".to_string(), files[0].1.clone()),

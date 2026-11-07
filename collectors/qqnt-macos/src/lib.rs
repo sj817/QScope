@@ -1,5 +1,4 @@
-//! macOS client inspection and the pinned ARM64 research-copy collector.
-//! Generic discovery alone never authorizes installing a hook.
+//! macOS 客户端检查及固定 ARM64 研究副本采集器，启用钩子另需独立验证。
 #[cfg(target_os = "macos")]
 mod common;
 pub mod inspect;
@@ -40,7 +39,7 @@ pub struct Scan {
     pub candidates: Vec<macho::Candidate>,
 }
 
-/// Scan a local Mach-O without loading it, launching QQ, or requesting any OS permissions.
+/// 以只读方式扫描本机 Mach-O 文件。
 pub fn scan(path: &Path) -> Result<Scan, Error> {
     let path = path.canonicalize()?;
     if !fs::metadata(&path)?.is_file() {

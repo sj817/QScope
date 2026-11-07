@@ -69,8 +69,7 @@ struct Target {
 
 struct InspectorClient {
     events: mpsc::Sender<Message>,
-    // Removing a client also cancels its relay, rather than leaving it alive
-    // while a timed-out frontend slowly drains previously queued events.
+    // 移除客户端时同时取消中继，避免超时前端持续消耗已排队事件。
     _lifetime: oneshot::Sender<()>,
 }
 
@@ -273,9 +272,7 @@ async fn forward_event(
             .map(|(id, client)| (id.clone(), client.events.clone()))
             .collect::<Vec<_>>()
     };
-    // Each client has at most EVENT_QUEUE pending frames, each bounded by
-    // MAX_MESSAGE. Wait outside the registry lock and in parallel, so one slow
-    // frontend cannot delay delivery to another by a separate timeout per client.
+    // 每个客户端最多保留 EVENT_QUEUE 帧，每帧受 MAX_MESSAGE 限制。在注册锁外并行等待，隔离慢速前端的投递延迟。
     let results = join_all(clients.into_iter().map(|(id, sender)| {
         let message = message.clone();
         async move {
@@ -377,8 +374,7 @@ async fn relay(
         let Some(target_id) = query.get("target") else {
             return;
         };
-        // A fresh internal ID distinguishes simultaneous tabs using the same
-        // frontend URL and prevents an old connection from removing a new one.
+        // 每次连接生成内部 ID，区分使用同一 URL 的多个标签页，并防止旧连接移除新连接。
         let client_id = match qscope_automation::runtime::instance_id() {
             Ok(value) => value,
             Err(_) => return,
@@ -540,8 +536,7 @@ mod tests {
             )
             .await
         });
-        // The healthy frontend gets the last event before the slow frontend's
-        // five-second timeout, while the slow queue remains fixed in size.
+        // 健康前端需在慢速前端的五秒超时前收到最后事件，慢速队列始终保持固定上限。
         tokio::time::timeout(std::time::Duration::from_secs(1), ready)
             .await
             .unwrap()

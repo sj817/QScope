@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type {
   Catalog,
@@ -145,14 +145,18 @@ export function App() {
     sessionRef.current = sessionId;
   }, [sessionId]);
 
-  const knownSessions = catalog?.sessions || [];
+  const knownSessions = useMemo(() => catalog?.sessions || [], [catalog]);
   const anchor = knownSessions.find((s) => s.id === sessionId);
   const account = anchor?.account || null;
-  const source: Source | null = sessionId
-    ? merged && account
-      ? { kind: "account", account, anchor: sessionId }
-      : { kind: "session", id: sessionId }
-    : null;
+  const source = useMemo<Source | null>(
+    () =>
+      sessionId
+        ? merged && account
+          ? { kind: "account", account, anchor: sessionId }
+          : { kind: "session", id: sessionId }
+        : null,
+    [sessionId, merged, account],
+  );
   const accountView = source?.kind === "account";
   const filter = useMemo(
     () => ({ q: query, direction, controls, advanced }),
@@ -164,7 +168,10 @@ export function App() {
     : feed.session?.id === sessionId
       ? feed.session
       : anchor;
-  const segments = accountView ? feed.segments : session ? [session] : [];
+  const segments = useMemo(
+    () => (accountView ? feed.segments : session ? [session] : []),
+    [accountView, feed.segments, session],
+  );
   const liveSession = accountView
     ? segments.find(isLive)
     : session && isLive(session)
@@ -185,9 +192,9 @@ export function App() {
     advanced,
   };
   const chips = filterChips(filterState);
-  // Search text stays in the input; every other condition is a token beside it.
+  // 搜索文本保留在输入框，其他条件显示为旁侧标签。
   const tokens = chips.filter((chip) => chip.id !== "search");
-  // Direction and command rules have their own controls, so the panel counts only the rest.
+  // 方向和命令规则拥有独立控件，本面板仅统计其他条件。
   const conditions = chips.filter(
     (chip) =>
       !["search", "direction"].includes(chip.id) &&
@@ -232,7 +239,7 @@ export function App() {
     return () => window.removeEventListener("popstate", update);
   }, []);
 
-  // A launch checks GitHub at most once a day, only to point out a new version.
+  // 启动时每天最多检查一次 GitHub 新版本。
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -404,6 +411,16 @@ export function App() {
     if (commit) writePreference("qscope.layout.listRatio", next.toFixed(3));
   }
 
+  const selectSavedSession = useEffectEvent((result: Catalog) => {
+    if (!savedPath) return;
+    const target = result.sessions.find(
+      (session) => session.path === savedPath,
+    );
+    if (target) {
+      chooseSession(target.id);
+      setSavedPath(null);
+    }
+  });
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -453,6 +470,7 @@ export function App() {
           }
         }
         if (!sessionRef.current && result.discovering) delay = 250;
+        selectSavedSession(result);
       } catch (error) {
         if (!abortError(error)) setCatalogError(message(error));
       }
@@ -469,27 +487,24 @@ export function App() {
     return () => clearTimeout(timer);
   }, [search]);
   const sourceKey = source ? JSON.stringify(source) : "";
-  useEffect(() => {
+  const [previousSource, setPreviousSource] = useState(sourceKey);
+  if (previousSource !== sourceKey) {
+    setPreviousSource(sourceKey);
     setSelected(null);
     setMenu(null);
     setContextKey(null);
-    autoSelected.current = false;
     setFollowBase(0);
-  }, [sourceKey]);
+  }
   useEffect(() => {
+    autoSelected.current = false;
+  }, [sourceKey]);
+  const [previousFilter, setPreviousFilter] = useState(filter);
+  if (previousFilter !== filter) {
+    setPreviousFilter(filter);
     setMenu(null);
     setContextKey(null);
-  }, [query, direction, controls, advanced]);
-  useEffect(() => {
-    if (savedPath && catalog) {
-      const target = catalog.sessions.find((s) => s.path === savedPath);
-      if (target) {
-        chooseSession(target.id);
-        setSavedPath(null);
-      }
-    }
-  }, [catalog, savedPath]);
-  // The first rows of a view select the newest packet once; later rows never replace the detail.
+  }
+  // 视图首批数据只自动选择一次最新包，后续数据保留当前详情。
   useEffect(() => {
     if (!selected && !autoSelected.current && feed.rows.length) {
       autoSelected.current = true;

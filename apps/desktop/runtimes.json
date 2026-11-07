@@ -1,18 +1,18 @@
 {
-  "schema_version": 1,
   "devtools": {
-    "version": "1.15.5",
-    "license": "MIT and Chromium frontend notices"
+    "license": "MIT and Chromium frontend notices",
+    "version": "1.15.5"
   },
   "inno": {
-    "version": "7.1.0",
-    "url": "https://github.com/portapps/innosetup-portable/releases/download/7.1.0-6/innosetup-portable-win64-7.1.0-7.7z",
+    "compiler_sha256": "d06ebd38f38e3cee60a3c50cc45bd449d77e0bc6a5cabc607ea9886808e4de1a",
     "sha256": "179cb8d1610430e1b339915cc9ba0082d1493b88f20bd3503918ba666d64ac7e",
-    "compiler_sha256": "d06ebd38f38e3cee60a3c50cc45bd449d77e0bc6a5cabc607ea9886808e4de1a"
+    "url": "https://github.com/portapps/innosetup-portable/releases/download/7.1.0-6/innosetup-portable-win64-7.1.0-7.7z",
+    "version": "7.1.0"
   },
+  "schema_version": 1,
   "webview2_bootstrapper": {
-    "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/068be74d-a831-494f-8f57-c173756d5a33/MicrosoftEdgeWebview2Setup.exe",
+    "bytes": 1897688,
     "sha256": "cf2f2445fef0c5c14e372045f84998771eeb8bb01d59be4afd00692fa160082e",
-    "bytes": 1897688
+    "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/068be74d-a831-494f-8f57-c173756d5a33/MicrosoftEdgeWebview2Setup.exe"
   }
 }

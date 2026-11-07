@@ -23,8 +23,7 @@ const newest = (a: Session, b: Session) => {
   return x === y ? b.id.localeCompare(a.id) : y > x ? 1 : -1;
 };
 
-// Launches are QQ processes recorded by the collector. Imports, recordings and
-// proxy captures with the same account stay in the group as extras.
+// 启动会话对应采集器记录的 QQ 进程，同账号导入、录制和代理抓包作为附加记录归组。
 export function groupSessions(sessions: Session[]): Map<string, Group> {
   const result = new Map<string, Group>();
   for (const session of [...sessions].sort(newest)) {
@@ -82,7 +81,7 @@ function AccountName({
         未识别账号
       </span>
     );
-  // Shown until a real login confirms the probe reads the logged-in account.
+  // 在真实登录验证探针读取账号之前显示此提示。
   const hint = /^\d+$/.test(account)
     ? terms.account
     : `${terms.account}这个值不是数字 QQ 号，可能是内部 uid。`;
@@ -188,7 +187,7 @@ function LaunchList({
   );
 }
 
-// Import and the account mask sit with the records they affect, in each record menu.
+// 导入及账号掩码操作放在相关记录的菜单中。
 function RecordActions({
   anyAccount,
   reveal,
@@ -259,9 +258,9 @@ export function SessionBar({
   onRefresh: () => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
-  // History follows the tabs, so it opens under its button and is kept inside the window.
+  // 历史列表跟随标签栏，在按钮下方展开并保持在窗口内。
   const [historyAt, setHistoryAt] = useState({ left: 0, top: 0 });
-  // Rendered outside the scrolling tab strip, so it is positioned from the tab.
+  // 在可滚动标签栏外渲染，位置由标签决定。
   const [launches, setLaunches] = useState<string | null>(null);
   const [launchAt, setLaunchAt] = useState({ left: 0, top: 0 });
   const menu = useRef<HTMLDivElement>(null);
@@ -313,12 +312,13 @@ export function SessionBar({
       document.removeEventListener("keydown", escape);
     };
   }, [historyOpen, launches]);
+  const selectedGroupKey = selectedGroup?.key;
   useEffect(() => {
-    if (selectedGroup)
+    if (selectedGroupKey)
       tabRefs.current
-        .get(selectedGroup.key)
+        .get(selectedGroupKey)
         ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [selectedGroup?.key]);
+  }, [selectedGroupKey]);
   const choose = (id: string) => {
     onSelect(id);
     setLaunches(null);

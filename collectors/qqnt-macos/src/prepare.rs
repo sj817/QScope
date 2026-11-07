@@ -20,9 +20,7 @@ use std::{
 const CHUNK: u64 = 8 * 1024 * 1024;
 
 fn download_client() -> Result<Client, Error> {
-    // The blocking timeout bounds each send/read through reqwest's blocking
-    // waiter. An async read_timeout creates a Tokio Sleep when the body is
-    // polled on our plain range threads, which have no reactor context.
+    // 阻塞超时通过 reqwest 阻塞等待器限制每次收发。普通分段下载线程缺少 Tokio reactor，需避免异步读取超时创建计时器。
     Client::builder()
         .timeout(Duration::from_secs(5))
         .no_proxy()
@@ -550,8 +548,7 @@ mod tests {
                 };
                 let bytes = server_bytes.clone();
                 responses.push(std::thread::spawn(move||{
-                    // Darwin accepts sockets with the listener's nonblocking
-                    // flag; this synthetic HTTP responder uses blocking I/O.
+                    // Darwin 接受的套接字会继承监听器的非阻塞标志，合成 HTTP 响应器使用阻塞 I/O。
                     stream.set_nonblocking(false).unwrap();
                     stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();stream.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
                     let mut request=Vec::new();let mut byte=[0u8;1];while request.len()<8192&&!request.ends_with(b"\r\n\r\n"){stream.read_exact(&mut byte).unwrap();request.push(byte[0]);}
@@ -559,8 +556,7 @@ mod tests {
                     let range=request.lines().find_map(|line|line.strip_prefix("range: bytes=")).unwrap();let (start,end)=range.split_once('-').unwrap();let start=start.parse::<usize>().unwrap();let end=end.parse::<usize>().unwrap();
                     assert!(end>=start&&end<bytes.len()&&end-start<CHUNK as usize);
                     let headers=format!("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {start}-{end}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",bytes.len(),end-start+1);
-                    // Deliver headers separately so plain worker threads must poll
-                    // the response body, including after a ready frame is consumed.
+                    // 分开发送响应头，迫使普通工作线程在就绪帧消费后继续轮询响应体。
                     stream.write_all(headers.as_bytes()).unwrap();
                     std::thread::sleep(Duration::from_millis(5));
                     for chunk in bytes[start..=end].chunks(16384) {if stream.write_all(chunk).is_err(){break;}}
@@ -657,7 +653,7 @@ mod tests {
                 )
             });
             headers.recv_timeout(Duration::from_secs(3)).unwrap();
-            // Leave time for the plain worker to block in its first body read.
+            // 留出时间让普通工作线程阻塞于首次响应体读取。
             std::thread::sleep(Duration::from_millis(100));
             cancelled.store(true, Ordering::Release);
             let error = task.join().unwrap().unwrap_err();
